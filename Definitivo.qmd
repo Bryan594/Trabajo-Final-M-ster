@@ -1,0 +1,1645 @@
+---
+title: "TFM"
+autor: "Bryan"
+format: html
+editor: visual
+---
+
+# Carga de datos
+
+```{r}
+library(ggplot2)
+library(zoo)
+library(plotly)
+library(tidyr)
+#install.packages("TSA")
+library(TSA)
+library(gridExtra)
+library(lmtest)
+
+library(forecast)
+library(tseries)
+#!install.packages("MTS")
+library(MTS)
+library(vars)
+library(dplyr)
+#install.packages("aod")  
+library(aod)
+```
+
+```{r}
+options(warn = -1) # Se Desactiva los warnings
+suppressMessages({
+  library(quantmod)
+  library(forecast)
+  library(tseries)
+})
+```
+
+Se carga las variables independiente
+
+```{r}
+# Cargar archivos
+data_nieve <- read.table("DepthSnow1931_2021.txt", header = FALSE, sep = "", stringsAsFactors = FALSE)
+colnames(data_nieve) <- c("V1", "V2", "V3", "V4")
+
+data_radiacion <- read.table("GlobalRadiation1901_2021.txt", header = FALSE, sep = "", stringsAsFactors = FALSE)
+colnames(data_radiacion) <- c("V1", "V2", "V3", "Radiation")
+
+data_temperatura <- read.table("MeanTemp1901_2021.txt", header = FALSE, sep = "", stringsAsFactors = FALSE)
+colnames(data_temperatura) <- c("V1", "V2", "V3", "Temperature")
+
+data_precipitacion <- read.table("Precipitacion1901_2021.txt", header = FALSE, sep = "", stringsAsFactors = FALSE)
+colnames(data_precipitacion) <- c("V1", "V2", "V3", "Precipitation")
+```
+
+Se carga la variable dependiente
+
+```{r}
+data_balance <- read.csv2("mass_balance_observation_aletsch.csv", header = TRUE, stringsAsFactors = FALSE)
+# Se divide Value entre 1000 para pasarlo a metros.
+data_balance$Value <- data_balance$Value / 1000
+```
+
+```{r}
+# se crea la columna fecha en las tablas
+
+data_nieve$Fecha <- as.Date(with(data_nieve, paste(V1, V2, V3, sep = "-")), "%Y-%m-%d")
+
+data_temperatura$Fecha <- as.Date(with(data_temperatura, paste(V1, V2, V3, sep = "-")), "%Y-%m-%d")
+
+data_precipitacion$Fecha <- as.Date(with(data_precipitacion, paste(V1, V2, V3, sep = "-")), "%Y-%m-%d")
+
+data_radiacion$Fecha <- as.Date(with(data_radiacion, paste(V1, V2, V3, sep = "-")), "%Y-%m-%d")
+
+```
+
+# Tratamiento de los datos
+
+## rellenar valores faltantes de Profundidad de la nieve
+
+Durante el proceso de descarga de datos, se identificó la presencia de valores faltantes en la tabla de profundidad de la nieve. Se observara que, en algunos meses, los registros diarios estaban incompletos y presentaban valores distribuidos de manera aleatoria, sin una secuencia clara.
+
+Para determinar si los datos faltantes deben ser interpolados o descartados, se realizó un análisis comparativo del comportamiento de la profundidad de la nieve (en metros) en los meses con datos ausentes. Esta comparación se llevó a cabo diferenciando dos períodos: antes de 1959 y después de 1959 . Si el patrón observado en ambos períodos es consistente, los valores faltantes podrían ser estimados mediante interpolación. En cambio, si se identifican diferencias significativas en los patrones, se considerará la opción de omitir estos datos en el análisis.
+
+```{r}
+# Crear un subconjunto con los datos antes de 1959
+datosAntes1959 <- subset(data_nieve, Fecha < as.Date("1959-01-01"))
+
+# Crear un subconjunto con los datos después de 1959
+datosDespues1959 <- subset(data_nieve, Fecha >= as.Date("1959-01-01"))
+
+# Agregar columnas de Año y Mes
+datosAntes1959 <- datosAntes1959 %>% 
+  mutate(Año = format(Fecha, "%Y"), Mes = format(Fecha, "%m"))
+
+datosDespues1959 <- datosDespues1959 %>% 
+  mutate(Año = format(Fecha, "%Y"), Mes = format(Fecha, "%m"))
+
+# Calcular el número de días presentes por mes antes de 1959
+diasPorMesAntes1959 <- datosAntes1959 %>%
+  group_by(Año, Mes) %>%
+  summarise(DiasPresentes = n(), .groups = "drop")
+
+# Calcular el promedio de nieve por mes antes de 1959
+promedioPorMesAntes1959 <- datosAntes1959 %>%
+  group_by(Mes) %>%
+  summarise(NievePromedio = mean(V4, na.rm = TRUE), .groups = "drop")
+
+# Calcular el promedio de nieve por mes después de 1959
+promedioPorMesDespues1959 <- datosDespues1959 %>%
+  group_by(Mes) %>%
+  summarise(NievePromedio = mean(V4, na.rm = TRUE), .groups = "drop")
+
+# Crear un dataframe auxiliar para la leyenda
+leyenda <- data.frame(
+  Periodo = c("Antes de 1959", "Después de 1959"),
+  Color = c("red", "blue")
+)
+
+# Visualizar la comparación de promedios con leyenda
+ggplot() +
+  geom_line(data = promedioPorMesAntes1959, aes(x = as.numeric(Mes), y = NievePromedio, color = "Antes de 1959"), size = 1) +
+  geom_line(data = promedioPorMesDespues1959, aes(x = as.numeric(Mes), y = NievePromedio, color = "Después de 1959"), size = 1) +
+  scale_color_manual(
+    values = setNames(leyenda$Color, leyenda$Periodo)
+  ) +
+  labs(
+    title = "Comparación del nivel promedio de nieve por mes",
+    x = "Mes",
+    y = "Nieve Promedio (m)",
+    color = "Periodo"
+  ) +
+  scale_x_continuous(breaks = 1:12, labels = month.abb) +
+  theme_minimal() +
+  theme(
+    legend.position = "top",  # Coloca la leyenda en la parte superior
+    legend.title = element_text(size = 10),  # Tamaño del título de la leyenda
+    legend.text = element_text(size = 9)     # Tamaño del texto de la leyenda
+  )
+```
+
+Como se observa en la gráfica, las líneas siguen un patrón similar, donde la profundidad de la nieve aumenta durante el invierno y disminuye en verano. Este comportamiento consistente sugiere que, al mantener una tendencia estacional clara, los datos faltantes pueden ser interpolados de manera razonable. De este modo, sería posible completar los registros ausentes y recuperar información de los años en los que los datos están incompletos, permitiendo un análisis más amplio y preciso.
+
+```{r}
+# Crear una serie completa de fechas desde el primer día hasta el último de los datos
+fechas_completas <- data.frame(
+  Fecha = seq(
+    from = as.Date("1931-01-02"), 
+    to = as.Date("1958-12-31"), 
+    by = "day"
+  )
+)
+# Unir las fechas completas con los datos originales
+datos_completados <- fechas_completas %>%
+  left_join(datosAntes1959, by = "Fecha")
+
+# Rellenar los valores faltantes en la columna V4 con interpolación lineal
+datos_completados <- datos_completados %>%
+  arrange(Fecha) %>% # Asegurar que las fechas estén ordenadas
+  mutate(
+    V4 = na.approx(V4, na.rm = FALSE) # Interpolación lineal
+  )
+
+#  ambos datasets deben tener las mismas columnas
+colnames(datos_completados)
+colnames(datosDespues1959)
+
+# Eliminar columnas V1,V2,V3,Año,Mes
+datos_completados<-datos_completados%>% dplyr::select(-V1,-V2,-V3,-Año, -Mes)
+datosDespues1959<-datosDespues1959%>% dplyr::select(-V1,-V2,-V3,-Año, -Mes)
+
+# organizo datos despues de 1959
+datosDespues1959<-datosDespues1959 %>%
+  dplyr::select(Fecha,V4)
+
+# Combinar los datasets
+datos_combinados <- bind_rows(datos_completados, datosDespues1959)
+
+# Ordenar por fecha para garantizar continuidad temporal
+datos_combinados <- datos_combinados %>%
+  arrange(Fecha)
+
+datos_combinados<-datos_combinados %>% rename(DepthSnow=V4)
+```
+
+```{r}
+summary(datos_combinados)
+```
+
+Rellenar los datos faltantes con la interpolación esta bien, dado que los valores giran todos entorno a la misma profundida de nieve en este mes
+
+```{r}
+# Rellenar los valores faltantes en la columna  con interpolación lineal
+datos_combinados <- datos_combinados%>%
+  arrange(Fecha) %>% # Asegurar que las fechas estén ordenadas
+  mutate(
+    DepthSnow = na.approx(DepthSnow, na.rm = FALSE) # Interpolación lineal
+  )
+```
+
+## Temperatura
+
+```{r}
+# Crear columnas de Año y Mes y calcular la temperatura promedio por mes
+promedioPorMes <- data_temperatura %>%
+  mutate(Año = format(Fecha, "%Y"), Mes = format(Fecha, "%m")) %>%
+  group_by(Mes) %>%
+  summarise(TemperaturaPromedio = mean(Temperature, na.rm = TRUE), .groups = "drop")
+
+# Convertir Mes a numérico para evitar problemas en la gráfica
+promedioPorMes$Mes <- as.numeric(promedioPorMes$Mes)
+
+# Crear el gráfico interactivo con líneas de referencia
+grafico_interactivo <- plot_ly(promedioPorMes, 
+                               x = ~Mes, y = ~TemperaturaPromedio, 
+                               type = 'scatter', mode = 'lines+markers', 
+                               line = list(color = 'blue', width = 2)) %>%
+
+  layout(title = "Promedio mensual de la temperatura",
+         xaxis = list(title = "Mes", tickvals = 1:12, ticktext = month.abb),
+         yaxis = list(title = "Temperatura Promedio (°C)"),
+         legend = list(orientation = "h", x = 0.3, y = -0.2),
+         margin = list(t = 50))
+
+grafico_interactivo
+```
+
+```{r}
+
+# Crear la columna Año antes de agrupar
+promedioPorAnioTemperature <- data_temperatura %>%
+  mutate(Año = format(as.Date(Fecha), "%Y")) %>%  # Convertir Fecha a Date si no lo es
+  group_by(Año) %>%
+  summarise(
+    TemperaturaPromedioAnual = mean(Temperature, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+
+# Crear el gráfico interactivo con plotly
+grafico_interactivo <- plot_ly(
+  promedioPorAnioTemperature,
+  x = ~as.numeric(Año),
+  y = ~TemperaturaPromedioAnual,
+  type = 'scatter',
+  mode = 'lines+markers',
+  line = list(color = 'blue', width = 2),
+  marker = list(size = 5)
+) %>%
+  layout(
+    title = "Evolución anual de la temperatura",
+    xaxis = list(title = "Año", tickangle = 45),
+    yaxis = list(title = "Temperatura Promedio Anual (°C)"),
+    margin = list(t = 50),
+    hovermode = "closest"
+  )
+
+# Mostrar el gráfico interactivo
+grafico_interactivo
+```
+
+## Precipitacion
+
+```{r}
+# Asegurar que la columna Fecha sea de tipo Date
+data_precipitacion <- data_precipitacion %>%
+  mutate(Fecha = as.Date(Fecha))  # Asegurar formato correcto
+
+# Agregar columnas de Año y Mes y calcular la suma de precipitación por mes
+sumaPorMesPrecip <- data_precipitacion %>%
+  mutate(Año = format(Fecha, "%Y"), Mes = format(Fecha, "%m")) %>%
+  group_by(Mes) %>%
+  summarise(PrecipitacionTotal = sum(Precipitation, na.rm = TRUE), .groups = "drop")
+
+# Convertir Mes a numérico para graficar correctamente
+sumaPorMesPrecip$Mes <- as.numeric(sumaPorMesPrecip$Mes)
+
+# Crear el gráfico interactivo con líneas de referencia
+grafico_interactivo <- plot_ly(sumaPorMesPrecip, 
+                               x = ~Mes, y = ~PrecipitacionTotal, 
+                               type = 'scatter', mode = 'lines+markers', 
+                               line = list(color = 'green', width = 2), 
+                               marker = list(size = 5)) %>%
+
+  layout(title = "Suma mensual de la precipitación",
+         xaxis = list(title = "Mes", tickvals = 1:12, ticktext = month.abb),
+         yaxis = list(title = "Precipitación Total (mm)"),
+         margin = list(t = 50),
+         hovermode = "closest")
+
+# Mostrar el gráfico interactivo
+grafico_interactivo
+
+```
+
+```{r}
+# Crear la columna Año y calcular la suma anual de precipitación
+PrecipitationAnual <- data_precipitacion %>%
+  mutate(Año = format(Fecha, "%Y")) %>%  # Extraer el año de la fecha
+  group_by(Año) %>%
+  summarise(PrecipitacionTotalAnual = sum(Precipitation, na.rm = TRUE), .groups = "drop")
+
+# Crear el gráfico interactivo
+grafico_interactivo <- plot_ly(
+  PrecipitationAnual,
+  x = ~Año,
+  y = ~PrecipitacionTotalAnual,
+  type = 'scatter',
+  mode = 'lines+markers',
+  line = list(color = 'green', width = 2)
+) %>%
+  layout(
+    title = "Evolución anual de la precipitación",
+    xaxis = list(title = "Año", tickangle = 45),
+    yaxis = list(title = "Precipitación Total Anual (mm)"),
+    margin = list(t = 50, b = 100)
+  )
+
+# Mostrar el gráfico interactivo
+grafico_interactivo
+```
+
+## Radiación
+
+```{r}
+# Agregar columnas de Año y Mes
+data_radiacion <- data_radiacion %>% 
+  mutate(Año = format(Fecha, "%Y"), Mes = format(Fecha, "%m"))
+
+# Calcular el promedio de radiación por mes
+promedioPorMesRadiation <- data_radiacion %>%
+  group_by(Mes) %>%
+  summarise(
+    RadiacionPromedio = mean(Radiation, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Crear el gráfico interactivo con plotly
+grafico_interactivo <- plot_ly(
+  promedioPorMesRadiation,
+  x = ~as.numeric(Mes),
+  y = ~RadiacionPromedio,
+  type = 'scatter',
+  mode = 'lines+markers',
+  line = list(color = 'orange', width = 2),
+  marker = list(size = 5)
+) %>%
+  add_lines(x = c(3, 3), y = c(0, max(promedioPorMesRadiation$RadiacionPromedio)),
+            line = list(dash = 'dash', color = 'blue', width = 1), name = "Inicio temporada") %>%
+  add_lines(x = c(9, 9), y = c(0, max(promedioPorMesRadiation$RadiacionPromedio)),
+            line = list(dash = 'dash', color = 'blue', width = 1), name = "Fin temporada") %>%
+  layout(
+    title = "Promedio mensual de la radiación",
+    xaxis = list(title = "Mes", tickvals = 1:12, ticktext = month.abb),
+    yaxis = list(title = "Radiación Promedio (W/m²)"),
+    margin = list(t = 50),
+    hovermode = "closest"
+  )
+
+# Mostrar el gráfico interactivo
+grafico_interactivo
+```
+
+```{r}
+# Calcular el promedio anual de radiación
+promedioPorAnioRadiation <- data_radiacion %>%
+  group_by(Año) %>%
+  summarise(
+    RadiacionPromedioAnual = mean(Radiation, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Crear el gráfico interactivo con plotly
+grafico_interactivo <- plot_ly(
+  promedioPorAnioRadiation,
+  x = ~as.numeric(Año),
+  y = ~RadiacionPromedioAnual,
+  type = 'scatter',
+  mode = 'lines+markers',
+  line = list(color = 'orange', width = 2),
+  marker = list(size = 5)
+) %>%
+  layout(
+    title = "Evolución anual de la radiación",
+    xaxis = list(title = "Año", tickangle = 45),
+    yaxis = list(title = "Radiación Promedio Anual (W/m²)"),
+    margin = list(t = 50),
+    hovermode = "closest"
+  )
+
+# Mostrar el gráfico interactivo
+grafico_interactivo
+```
+
+## Profundidad de la nieve
+
+```{r}
+# Crear el gráfico interactivo
+plot_ly(
+  datos_combinados %>%
+    mutate(Mes = format(Fecha, "%m")) %>%
+    group_by(Mes) %>%
+    summarise(DepthSnowPromedio = mean(DepthSnow, na.rm = TRUE), .groups = "drop"),
+  x = ~as.numeric(Mes),
+  y = ~DepthSnowPromedio,
+  type = 'scatter',
+  mode = 'lines+markers',
+  line = list(color = 'purple', width = 2)
+) %>%
+  add_lines(x = c(7, 7), y = c(0, max(datos_combinados$DepthSnow, na.rm = TRUE)),
+            line = list(dash = 'dash', color = 'blue', width = 1), name = "Inicio temporada") %>%
+  add_lines(x = c(11, 11), y = c(0, max(datos_combinados$DepthSnow, na.rm = TRUE)),
+            line = list(dash = 'dash', color = 'blue', width = 1), name = "Fin temporada") %>%
+  layout(
+    title = "Promedio mensual de la profundidad de nieve",
+    xaxis = list(title = "Mes", tickvals = 1:12, ticktext = month.abb),
+    yaxis = list(title = "Profundidad de Nieve Promedio (m)")
+  )
+```
+
+```{r}
+# Crear la columna Año si no existe
+datos_combinados <- datos_combinados %>%
+  mutate(Año = format(Fecha, "%Y")) # Extraer el año de la fecha
+
+# Crear el gráfico interactivo
+plot_ly(
+  datos_combinados %>%
+    group_by(Año) %>%
+    summarise(DepthSnowPromedioAnual = mean(DepthSnow, na.rm = TRUE), .groups = "drop"),
+  x = ~as.numeric(Año),
+  y = ~DepthSnowPromedioAnual,
+  type = 'scatter',
+  mode = 'lines+markers',
+  line = list(color = 'purple', width = 2),
+  marker = list(size = 5)
+) %>%
+  layout(
+    title = "Evolución anual de la profundidad de nieve",
+    xaxis = list(title = "Año", tickangle = 45),
+    yaxis = list(title = "Profundidad de Nieve Promedio Anual (m)"),
+    hovermode = "closest"
+  )
+```
+
+## Union de los datos
+
+Se pasan todas las columnas a la tabla "datos_combinados"
+
+```{r}
+# Se Combina las tablas utilizando joins de dplyr
+# Combinar Temperature
+datos_combinados <- datos_combinados %>%
+  left_join(data_temperatura %>% select(Fecha, Temperature), by = "Fecha")
+
+# Combinar Precipitation
+datos_combinados <- datos_combinados %>%
+  left_join(data_precipitacion %>% select(Fecha, Precipitation), by = "Fecha")
+
+# Combinar Radiation
+datos_combinados <- datos_combinados %>%
+  left_join(data_radiacion %>% select(Fecha, Radiation), by = "Fecha")
+```
+
+Antes de 01/01/1934 No hay datos de Temperatura y precipitacion, por ello se empieza desde 1934
+
+```{r}
+# Filtrar las fechas entre 1934-01-01 y 2021-08-02
+datos_combinados <- datos_combinados %>%
+  filter(Fecha >= as.Date("1934-01-01") & Fecha <= as.Date("2021-08-02"))
+```
+
+## Rellenar datos faltantes
+
+```{r}
+colSums(is.na(datos_combinados))  # Contar valores NA por columna
+```
+
+```{r}
+datos_combinados[!complete.cases(datos_combinados),] # se mira los datos faltantes
+```
+
+### Observaciones para rellenar los valores faltantes en la radiación
+
+La radiación tiene 592 valores faltantes.
+
+El mayor numero de datos faltantes se eencuentra entre los años 1981-1983. Siguiendo un poco el historico de la radiacion, es bastante aleatoria.
+
+Se plantean panoramas para ver el comportamiento de los datos y asi rellenar los datos faltantessiguiendo una lógica:
+
+Primero se observara como se comporta la radiacion en un mismo dia en diferentes años
+
+```{r}
+# Filtrar datos para el 10 de mayo
+dia_especifico <- datos_combinados %>%
+  mutate(Dia = format(Fecha, "%d"), Mes = format(Fecha, "%m"), Año = format(Fecha, "%Y")) %>%
+  filter(Dia == "10" & Mes == "05")
+
+# Crear el gráfico interactivo
+plot_ly(
+  dia_especifico,
+  x = ~as.numeric(Año),
+  y = ~Radiation,
+  type = 'scatter',
+  mode = 'lines+markers',
+  line = list(color = 'blue', width = 2),
+  marker = list(size = 5)
+) %>%
+  layout(
+    title = "Cambio de la radiación para el 10 de mayo a lo largo de los años",
+    xaxis = list(title = "Año"),
+    yaxis = list(title = "Radiación"),
+    hovermode = "closest"
+  )
+```
+
+La Variación es enorme, no sigue una tendencia. No es una buena opcion para rellenar los datos faltantes.
+
+Ahora se mira como cambia la radiacion durante un mismo mes en 3 años diferentes seguidos
+
+```{r}
+# Asegurarse de que la columna Fecha sea de tipo Date
+datos_combinados$Fecha <- as.Date(datos_combinados$Fecha)
+
+# Filtrar datos para noviembre (Mes = "11") y los años 1984, 1985, 1986
+mayo_datos <- datos_combinados %>%
+  mutate(
+    Mes = format(Fecha, "%m"),
+    Año = format(Fecha, "%Y"),
+    Dia = as.numeric(format(Fecha, "%d"))
+  ) %>%
+  filter(Mes == "11" & Año %in% c("1984", "1985", "1986"))
+
+# Crear el gráfico interactivo con plotly
+plot_ly(
+  mayo_datos,
+  x = ~Dia,
+  y = ~Radiation,
+  color = ~Año,
+  type = 'scatter',
+  mode = 'lines+markers',
+  line = list(width = 2),
+  marker = list(size = 5)
+) %>%
+  layout(
+    title = "Variación de la radiación durante Noviembre (1984-1986)",
+    xaxis = list(title = "Día del mes", tickvals = seq(1, 31, by = 1)),
+    yaxis = list(title = "Radiación"),
+    legend = list(title = list(text = "Año")),
+    hovermode = "closest"
+  )
+```
+
+A simple vista, no se observa un patrón claro y existe una variabilidad considerable en los datos. Sin embargo, la media mensual-anual es relativamente baja en comparación con otros meses, aunque esto no se aprecia directamente en la gráfica. Por esta razón, los valores faltantes se imputarán de manera aleatoria, basándose en la media y la desviación estándar de cada mes por año.
+
+```{r}
+# Crear columnas de Año y Mes
+datos_combinados <- datos_combinados %>%
+  mutate(
+    Año = format(Fecha, "%Y"),
+    Mes = format(Fecha, "%m")
+  )
+
+# Calcular la media y la desviación estándar por Mes y Año
+estadisticas_mensuales <- datos_combinados %>%
+  group_by(Año, Mes) %>%
+  summarise(
+    media_mensualRad = mean(Radiation, na.rm = TRUE),
+    sd_mensualRad = sd(Radiation, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Unir las estadísticas mensuales con los datos originales
+datos_combinados <- datos_combinados %>%
+  left_join(estadisticas_mensuales, by = c("Año", "Mes"))
+```
+
+```{r}
+# Rellenar valores faltantes de Radiation con valores aleatorios basados en la media mensual
+set.seed(123) # Para reproducibilidad
+datos_combinados <- datos_combinados %>%
+  mutate(
+    Radiation = ifelse(
+      is.na(Radiation),
+      rnorm(n(), mean = media_mensualRad, sd = sd_mensualRad), # Generar valores aleatorios
+      Radiation
+    )
+  )
+```
+
+Se comprueba que los valores sigan conservando la aleatoriedad y no sigan un patrón claro. Esto durante el mes de noviembre
+
+```{r}
+# Filtrar datos para noviembre (Mes = "11") y los años 1984, 1985, 1986
+noviembrer_datos <- datos_combinados %>%
+  mutate(
+    Mes = format(Fecha, "%m"),
+    Año = format(Fecha, "%Y"),
+    Dia = as.numeric(format(Fecha, "%d"))
+  ) %>%
+  filter(Mes == "11" & Año %in% c("1984", "1985", "1986"))
+plot_ly(
+  noviembrer_datos,
+  x = ~Dia,
+  y = ~Radiation,
+  color = ~as.factor(Año),  # Asegurar que el color se base en una variable categórica
+  type = 'scatter',
+  mode = 'lines+markers',
+  line = list(width = 2, shape = "linear"),  # Forzar conexión
+  marker = list(size = 5)
+) %>%
+  layout(
+    title = "Variación de la radiación durante Noviembre (1984-1986)",
+    xaxis = list(title = "Día del mes", tickvals = seq(1, 31, by = 1)),
+    yaxis = list(title = "Radiación"),
+    legend = list(title = list(text = "Año")),
+    hovermode = "closest"
+  )
+
+```
+
+### Observaciones para rellenar los valores faltantes de las Precipitaciones
+
+Hay un total de 108 valores faltantes Distribuccion de los valores faltantes: los valores faltantes estan en los años 2014,2016 (sólo 2 dias), 2017,2018,2019, 2021 (estos 4 últimos son los que mas valores faltantes tienen). Falta casi el mes entero de:
+
+-   Marzo del 2021
+
+-   Enero del 2019
+
+-   Diciembre del 2018
+
+-   Enero del 2017
+
+-   Febrero del 2014
+
+En términos generales, las precipitaciones no siguen un patrón diario claro. Sin embargo, al analizar la media mensual, se observa que algunos meses presentan mayores niveles de lluvia que otros, similar a lo que ocurre con la radiación. No obstante, en este caso, no se procederá a rellenar los valores faltantes de la misma manera, ya que casi todo el mes carece de datos.
+
+Diciembre, enero y marzo destacan como meses de alta precipitación. Dado que abril no presenta días faltantes y también pertenece al grupo de meses con mayores lluvias, se calcularán la media y la desviación estándar de febrero para cada año. Con base en estos valores, se imputarán los datos faltantes de cada año, asegurando así la conservación de la media y la varianza anual.
+
+```{r}
+# Calcular la media y desviación estándar de abril de cada año
+estadisticas_abril <- datos_combinados %>%
+  filter(Mes == "04") %>% # Filtrar solo el mes de abril
+  group_by(Año) %>%
+  summarise(
+    media_abril = mean(Precipitation, na.rm = TRUE),
+    sd_abril = sd(Precipitation, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Unir las estadísticas de abril con los datos originales
+datos_combinados <- datos_combinados %>%
+  left_join(estadisticas_abril, by = "Año")
+```
+
+```{r}
+# Rellenar valores faltantes en Precipitation
+set.seed(123) # Para reproducibilidad
+datos_combinados <- datos_combinados %>%
+  mutate(
+    Precipitation = ifelse(
+      is.na(Precipitation),
+      rnorm(n(), mean = media_abril, sd = sd_abril),   # Basado en estadísticas de Abril
+      Precipitation
+    )
+  )
+```
+
+### Observaciones para rellenar los valores faltantes de la Temperatura
+
+Hay sólo 2 datos faltantes de la temperatura, entonces se optara por rellenarlos segun una interpolacion, ya que la temperatura suele seguir un patron.
+
+```{r}
+
+# Rellenar los valores faltantes en la columna Temperature por interpolación
+datos_combinados <- datos_combinados %>%
+  arrange(Fecha) %>% # Asegurar que los datos estén ordenados por fecha
+  mutate(
+    Temperature = na.approx(Temperature, na.rm = FALSE) # Interpolación lineal
+  )
+```
+
+## Separacion de los datos por temporada
+
+```{r}
+# Crear la columna Año y Temporada
+datos_combinados <- datos_combinados %>%
+  mutate(
+    Año = format(Fecha, "%Y"),
+    MesDia = format(Fecha, "%m-%d"),
+    Temporada = case_when(
+      MesDia >= "05-20" & MesDia <= "09-20" ~ "Verano",
+      TRUE ~ "Invierno"
+    )
+  )
+
+# Calcular el promedio  por temporada y año
+datos_temporada <- datos_combinados %>%
+  group_by(Año, Temporada) %>%
+  summarise(
+    DepthSnowPromedio = mean(DepthSnow, na.rm = TRUE),
+    RadiationPromedio = mean(Radiation, na.rm = TRUE),
+    PrecipitationPromedio = mean(Precipitation, na.rm = TRUE),
+    TemperaturePromedio = mean(Temperature, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Calcular los promedios anuales
+datos_anuales <- datos_combinados %>%
+  group_by(Año) %>%
+  summarise(
+    DepthSnowPromedio_Anual = mean(DepthSnow, na.rm = TRUE),
+    RadiationPromedio_Anual = mean(Radiation, na.rm = TRUE),
+    PrecipitationPromedio_Anual = mean(Precipitation, na.rm = TRUE),
+    TemperaturePromedio_Anual = mean(Temperature, na.rm = TRUE),
+    .groups = "drop"
+  )
+```
+
+Se crea un gráfico interactivo para cada variable
+
+```{r}
+plot_ly(datos_temporada, x = ~as.numeric(Año), y = ~DepthSnowPromedio, type = 'scatter', mode = 'lines+markers', color = ~Temporada, line = list(width = 2)) %>%
+  layout(
+    title = "Evolución estacional de la profundidad de la nieve",
+    xaxis = list(title = "Año", tickangle = 45),
+    yaxis = list(title = "Valor Promedio"),
+    hovermode = "closest",
+    legend = list(title = list(text = "Temporada"))
+  )
+```
+
+```{r}
+plot_ly(datos_temporada, x = ~as.numeric(Año),y = ~RadiationPromedio, type = 'scatter', mode = 'lines+markers', color = ~Temporada,   line = list(width = 2)) %>%
+  layout(
+    title = "Evolución estacional de la Radiación",
+    xaxis = list(title = "Año", tickangle = 45),
+    yaxis = list(title = "Valor Promedio"),
+    hovermode = "closest",
+    legend = list(title = list(text = "Temporada"))
+  )
+```
+
+```{r}
+plot_ly(datos_temporada, x = ~as.numeric(Año), y = ~PrecipitationPromedio, color = ~Temporada,  type = 'scatter', mode = 'lines+markers', line = list(width = 2)) %>%
+  layout(
+    title = "Evolución estacional de las precipitaciones",
+    xaxis = list(title = "Año", tickangle = 45),
+    yaxis = list(title = "Valor Total"),
+    hovermode = "closest",
+    legend = list(title = list(text = "Temporada"))
+  )
+```
+
+```{r}
+plot_ly(datos_temporada, x = ~as.numeric(Año), y = ~TemperaturePromedio, type = 'scatter', mode = 'lines+markers', color = ~Temporada, line = list(width = 2)) %>%
+  layout(
+    title = "Evolución estacional de la Temperatura",
+    xaxis = list(title = "Año", tickangle = 45),
+    yaxis = list(title = "Valor Promedio"),
+    hovermode = "closest",
+    legend = list(title = list(text = "Temporada"))
+  )
+```
+
+Se separa los datos en columnas de verano e invierno
+
+```{r}
+# Reorganizar los datos para tener columnas separadas para verano e invierno
+datos_temporada_wide <- datos_temporada %>%
+  pivot_wider(
+    names_from = Temporada,  # Usar los valores de "Temporada" para crear nuevas columnas
+    values_from = c(DepthSnowPromedio, RadiationPromedio, PrecipitationPromedio, TemperaturePromedio)
+  )
+
+# Unir los promedios anuales con los promedios de temporada
+datos_finales <- datos_anuales %>%
+  left_join(datos_temporada_wide, by = "Año")
+
+datos_finales <- datos_finales %>%
+  rename(Temporada = Año)
+
+```
+
+Se añade columna de variable dependiente
+
+```{r}
+# Extraer el año de la columna End.date.of.observation y seleccionar solo las columnas necesarias
+data_balance <- data_balance %>%
+  mutate(Temporada = as.numeric(format(as.Date(End.date.of.observation, format = "%d/%m/%Y"), "%Y"))) %>%
+  select(Temporada, Value)  # Mantener solo Temporada y Value
+
+# Se cambia el tipo de dato
+data_balance$Temporada<- as.numeric(data_balance$Temporada) 
+datos_finales$Temporada<- as.numeric(datos_finales$Temporada)
+
+# agregar la columna a values a la tabla por datos_anual
+datos_finales<- datos_finales %>%
+  left_join(data_balance %>% select(Temporada, Value), by="Temporada")
+```
+
+```{r}
+# Se elimina la columna Temporada
+datos_finales <- datos_finales%>% select(-Temporada)
+# se renombra la columna value
+datos_finales<- datos_finales %>% 
+  rename(mass_balance=Value)
+```
+
+```{r}
+summary(datos_finales)
+```
+
+## Métricas de seleccion de variables
+
+###correlación
+
+```{r}
+require(corrplot)
+corrplot(cor(datos_finales), tl.col = "black", tl.cex = 0.8)
+```
+
+```{r}
+# coeficiente de correlación
+round(cor(x=datos_finales, method="pearson"),3)
+```
+
+Se crea un modelo con todas las variables
+
+```{r}
+full_model<- lm(mass_balance~., data =datos_finales )
+summary(full_model)
+```
+
+El modelo con todas las variables introducidas tiene un R2 ajustado=0.5429, lo que quiere decir que es capaz de explicar el 54.29% de la variabilidad observada en el balance de masas y un p-value significativo, por lo que se puede aceptar que el modelo no es por azar.
+
+### AIC
+
+El AIC (Criterio de Información de Akaike) mide qué tan bien un modelo se ajusta a los datos mientras penaliza la complejidad del modelo (evita sobreajuste).
+
+Un valor de AIC más bajo indica un mejor modelo.
+
+```{r}
+step(object = full_model, direction = "both", trace = 1)
+```
+
+Cada una de las pendientes de un modelo de regresión lineal múltiple (coeficientes parciales de regresión de los predictores) se define del siguiente modo: Si el resto de las variables se mantienen constantes, por cada unidad que aumenta el predictor en cuestión, la variable (Y) varía en promedio tantas unidades como indica la pendiente (Rodrigo, 2016).
+
+Para este ejemplo, por cada unidad que aumenta el predictor de profundidad de nieve en verano, el balance de masas aumenta en promedio 0.1852 unidades, manteniéndose constantes el resto de predictores.
+
+Una vista más a fondo encuentra algunas incongruencias por ejemplo la temperatura. Por cada unidad que aumente la temperatura promedio anual, el balance de masas disminuirá 32,4924 unidades, manteniéndose constantes el resto de predictores. Esto podría ser razonable pero luego se observa que por cada unidad que aumenta la temperatura promedio de invierno o verano, aumenta el balance de masas.
+
+Esto podría ocurrir por la multicolinealidad ya que las temperaturas están correlacionadas y pueden generar coeficientes con signos inesperados. Entonces por ello en el modelo final, se elegirá sólo una variable por temporada.
+
+```{r}
+library(glmnet)
+X <- model.matrix(mass_balance ~ ., data = datos_finales)[,-1] # Matriz de predictores
+y <- datos_finales$mass_balance
+lasso_model <- cv.glmnet(X, y, alpha = 1) # LASSO usa alpha = 1
+coef(lasso_model, s = "lambda.min") # Ver variables seleccionadas
+```
+
+
+### Relación lineal entre los predictores numéricos y las variables respuesta
+
+Esta condición se puede validar bien mediante diagramas de dispersión entre la variable dependiente y cada uno de los predictores o con diagramas de dispersión entre cada uno de los predictores y los residuos del modelo. Si la relación es lineal, los residuos deben de distribuirse aleatoriamente en torno a 0 con una variabilidad constante a lo largo del eje X. Esta última opción suele ser más indicada ya que permite identificar posibles datos atípicos.
+
+```{r}
+# Radiación
+plot1 <- ggplot(data = datos_finales, aes(RadiationPromedio_Anual, full_model$residuals)) + geom_point() + geom_smooth(color = "firebrick") + geom_hline(yintercept = 0) + theme_bw()
+plot2 <- ggplot(data = datos_finales, aes(RadiationPromedio_Invierno, full_model$residuals)) + geom_point() + geom_smooth(color = "firebrick") + geom_hline(yintercept = 0) + theme_bw()
+plot3 <- ggplot(data = datos_finales, aes(RadiationPromedio_Verano, full_model$residuals)) + geom_point() + geom_smooth(color = "firebrick") + geom_hline(yintercept = 0) + theme_bw()
+grid.arrange(plot1,plot2,plot3)
+```
+
+```{r}
+# Precipitacion
+plot1 <- ggplot(data = datos_finales, aes(PrecipitationPromedio_Anual, full_model$residuals)) + geom_point() + geom_smooth(color = "firebrick") + geom_hline(yintercept = 0) + theme_bw()
+plot2 <- ggplot(data = datos_finales, aes(PrecipitationPromedio_Invierno, full_model$residuals)) + geom_point() + geom_smooth(color = "firebrick") + geom_hline(yintercept = 0) + theme_bw()
+plot3 <- ggplot(data = datos_finales, aes(PrecipitationPromedio_Verano, full_model$residuals)) + geom_point() + geom_smooth(color = "firebrick") + geom_hline(yintercept = 0) + theme_bw()
+grid.arrange(plot1,plot2,plot3)
+```
+
+```{r}
+# Temperatura
+plot1 <- ggplot(data = datos_finales, aes(TemperaturePromedio_Anual, full_model$residuals)) + geom_point() + geom_smooth(color = "firebrick") + geom_hline(yintercept = 0) + theme_bw()
+plot2 <- ggplot(data = datos_finales, aes(TemperaturePromedio_Invierno, full_model$residuals)) + geom_point() + geom_smooth(color = "firebrick") + geom_hline(yintercept = 0) + theme_bw()
+plot3 <- ggplot(data = datos_finales, aes(TemperaturePromedio_Verano, full_model$residuals)) + geom_point() + geom_smooth(color = "firebrick") + geom_hline(yintercept = 0) + theme_bw()
+grid.arrange(plot1,plot2,plot3)
+```
+
+```{r}
+# Profundidad de la nieve
+plot1 <- ggplot(data = datos_finales, aes(DepthSnowPromedio_Anual, full_model$residuals)) + geom_point() + geom_smooth(color = "firebrick") + geom_hline(yintercept = 0) + theme_bw()
+plot2 <- ggplot(data = datos_finales, aes(DepthSnowPromedio_Invierno, full_model$residuals)) + geom_point() + geom_smooth(color = "firebrick") + geom_hline(yintercept = 0) + theme_bw()
+plot3 <- ggplot(data = datos_finales, aes(DepthSnowPromedio_Verano, full_model$residuals)) + geom_point() + geom_smooth(color = "firebrick") + geom_hline(yintercept = 0) + theme_bw()
+grid.arrange(plot1,plot2,plot3)
+```
+
+Se cumple la linealidad para todos los predictores
+
+# Modelo Regresión Lineal Múltiple
+
+
+Confirmación del modelo
+
+```{r}
+best_model <- lm(mass_balance~ DepthSnowPromedio_Verano+TemperaturePromedio_Verano+PrecipitationPromedio_Verano+RadiationPromedio_Anual, data =datos_finales  )
+
+summary(best_model)
+```
+El modelo con las variables elegidas tiene un R2 ajustado=0.5129, lo que quiere decir que es capaz de explicar el 51.29% de la variabilidad observada en el balance de masas y un p-value significativo, por lo que se puede aceptar que el modelo no es por azar.
+
+El valor matemático empleado para determinar la calidad del modelo va a ser Akaike(AIC).
+
+```{r}
+# Calidad del modelo ->AIC
+step(object = best_model, direction = "both", trace = 1)
+```
+
+Segun el Akaike, el mejor modelo es sin incluir la variable de precipitación promedio de verano.
+
+Se hacen pruebas
+
+#### Mejor modelo segun Akaike (AIC)
+
+```{r}
+best_model1 <- lm(mass_balance~ DepthSnowPromedio_Verano+TemperaturePromedio_Verano+RadiationPromedio_Anual, data =datos_finales  )
+
+summary(best_model1)
+```
+
+El modelo con las variables seleccionadas presenta un R2 ajustado de 0.5186, lo que indica que es capaz de explicar aproximadamente el 51.86% de la variabilidad observada en el balance de masas. Además, el p-value asociado al modelo es significativo, lo que permite concluir que el modelo no es resultado del azar.
+
+Al comparar este R2 ajustado con el del modelo anterior, se observa que es ligeramente superior, aunque solo por unas décimas. Si el objetivo es explicar el balance de masas con el menor número de variables posible, eliminar una de las columnas podría ser una opción recomendable. Esto se debe a que, incluso con una variable menos, el modelo es capaz de explicar prácticamente la misma proporción de variabilidad, e incluso un poco más, lo que sugiere que la variable eliminada no contribuye significativamente a la capacidad explicativa del modelo. En otras palabras, la precipitación no aporta información relevante al balance de masas bajo las condiciones de este estudio.
+
+El mejor modelo es aquel que logra explicar con mayor precisión la variabilidad observada en la variable respuesta utilizando el menor número de predictores posibles, reduciendo así la complejidad y las asunciones del modelo.
+
+Aunque el AIC recomienda eliminar la precipitación, hay razones sólidas para mantenerla. Desde un enfoque teórico, la precipitación es un factor climático clave que, aunque no sea estadísticamente significativa en este modelo, tiene un impacto potencial sobre el balance de masas. Su inclusión asegura que el modelo refleje de manera más completa las variables climáticas relevantes, lo que es crucial para su interpretación en otros contextos o estudios futuros. Además, el AIC no debe ser el único criterio: la relevancia teórica de la precipitación justifica su presencia, incluso si su contribución no es evidente en estos datos. Mantenerla enriquece el modelo y lo hace más robusto para representar los procesos subyacentes.
+
+### Distribuccion normal de los residuos
+
+Test de Jarque Bera 
+El test de Jarque-Bera es una prueba de hipótesis que se basa en dos propiedades de la distribución normal: (Jarque, 1980)
+	Asimetría (skewness): Mide la falta de simetría en la distribución de los datos. En una distribución normal, la asimetría es 0.
+	Curtosis (kurtosis): Mide la "cola" de la distribución, es decir, cuánta masa se concentra en las colas en comparación con una distribución normal. En una distribución normal, la curtosis es 3.
+
+Hipótesis del test:
+〖Hipotesis nula (H〗_0):Los datos siguen una distribucción normal
+〖Hipotesis alternativa (H〗_1):Los datos no siguen una distribucción normal
+
+
+```{r}
+jarque.bera.test(best_model$residuals)
+```
+
+En este caso, el resultado del test muestra un estadístico X-squared = 2.5294 y un p-value = 0.2823 Dado que el p-value es mayor que 0.05, no hay evidencia suficiente para rechazar la hipótesis nula, lo que indica que los residuos siguen una distribución normal. 
+
+```{r}
+plot(best_model)
+```
+
+interpretacion del Gráfico Q-Q El Q-Q plot compara los cuantiles de los residuos observados con los cuantilres de una distribución normal teórica. Si los puntos siguen aproximadamente la línea diagonal, los residuos se distribuyen normalmente. En este cso los residuos se alinean basntante bien con la línea, con algunas desviaciones leves en los extremos.
+
+### Variabilidad constante de los residuos (homocedasticidad)
+
+Este análisis evalúa si los residuales del modelo (best_model) presentan homocedasticidad, es decir, si la varianza de los errores es constante a lo largo de los valores ajustados.
+
+Al representar los residuos frente a los valores ajustados por el modelo, los primeros se tienen que distribuir de forma aleatoria en torno a cero, manteniendo aproximadamente la misma variabilidad a lo largo del eje X. Si se observa algún patrón específico, por ejemplo forma cónica o mayor dispersión en los extremos, significa que la variabilidad es dependiente del valor ajustado y por lo tanto no hay homocedasticidad.
+
+```{r}
+ggplot(data = datos_finales, aes(best_model$fitted.values, best_model$residuals)) + geom_point() + geom_smooth(color = "firebrick", se = FALSE) + geom_hline(yintercept = 0) + theme_bw()
+```
+
+La línea roja muestra una tendencia no completamente plana, lo que podría indicar cierta variación en la dispersión de los residuos. Sin embargo, no hay una tendencia clara de expansión o contracción de los residuos en función de los valores ajustados, lo que sugiere que la variabilidad se mantiene relativamente constante.
+
+### Homocedasticidad
+
+Test de Breusch-Pagan
+
+Hipótesis nula (H₀): Los errores tienen varianza constante (homocedasticidad). Hipótesis alternativa (H₁): Los errores presentan heterocedasticidad (varianza no constante).
+
+```{r}
+bptest(best_model)
+```
+
+no hay suficiente evidencia para afirmar que existe heterocedasticidad. Se puede asumir que los residuos cumplen con la homocedasticidad.
+
+luego, No hay evidencias de falta de homocedasticidad.
+
+### Análisis de Inflación de Varianza (VIF)
+
+El VIF (Variance Inflation Factor) es una métrica utilizada para detectar la presencia de colinealidad entre las variables independientes de un modelo de regresión. Un valor elevado de VIF indica que una variable está altamente correlacionada con otra(s), lo que puede afectar la estabilidad y la interpretabilidad de los coeficientes del modelo. Criterios: • VIF \< 5 → No hay colinealidad problemática. • VIF entre 5 y 10 → Existe moderada colinealidad, revisar la variable. • VIF \> 10 → Alta colinealidad, la variable debería ser reconsiderada.
+
+```{r}
+require(car)
+vif(best_model)
+```
+
+En este caso, todos los valores de VIF obtenidos están muy por debajo de 5. Esto indica que no existe colinealidad problemática entre las variables independientes del modelo, lo que confirma la robustez y la adecuación de la estructura del modelo propuesto.
+
+### Autocorrelación
+
+Test de Box-Ljung 
+El test de Box-Ljung es una prueba estadística utilizada para evaluar si los residuos de un modelo de series temporales son independientes (es decir, si no hay autocorrelación). (Box, 1970)
+
+Hipotesis nula (H0):No hay autocorrelación en los residuos
+Hipotesis alternativa (H1):Existe autocorrelacion en los residuos
+
+
+```{r}
+Box.test(best_model$residuals, lag = 20, type = "Ljung-Box")
+
+```
+
+El estadístico del test fue X-squared = 39.61 con 20 grados de libertad, y se obtuvo un p-value = 0.0056.
+Dado que el p-value es inferior al nivel de significancia de 0.05, se rechaza la hipótesis nula de que no existe autocorrelación en los residuos.
+Por lo tanto, se concluye que existe evidencia significativa de autocorrelación en los residuos del modelo, lo cual sugiere que el supuesto de independencia no se cumple completamente y podría ser necesario considerar un modelo alternativo que tenga en cuenta esta dependencia temporal o estructural.
+### Resumen del modelo (MLR)
+
+El modelo con las variables elegidas tiene un R2 ajustado=0.5129, lo que quiere decir que es capaz de explicar el 51.29% de la variabilidad observada en el balance de masas y un p-value significativo, por lo que se puede aceptar que el modelo no es por azar.En cuanto a los residuos, cumple con el supuesto de homocedasticidad y distribucción normal, pero existe evidencia significativa de autocorrelación en los residuos del modelo, lo cual sugiere que el supuesto de independencia no se cumple completamente y podría ser necesario considerar un modelo alternativo que tenga en cuenta esta dependencia temporal o estructural.
+
+
+# Modelo de regresión lineal múltiple con componente autorregresiva (MLR-AR)
+
+Siguiendo la sugerencia de los resultados anteriores, se crea otro modelo que tiene en cuenta la dependencia temporal de la variable dependendiente.
+
+```{r}
+# Crear variable rezagada (lag 1) de la variable dependiente
+datos_finales <- datos_finales %>%
+  mutate(mass_balance_lag1 = lag(mass_balance, 1))
+
+# Eliminar la primera fila con NA en mass_balance_lag1 (por el lag)
+datos_finales_limpio <- datos_finales %>%
+  filter(!is.na(mass_balance_lag1))
+
+# Ajustar el nuevo modelo con la variable de rezago incluida
+modelo_corrigido <- lm(mass_balance ~ 
+                         DepthSnowPromedio_Verano + 
+                         TemperaturePromedio_Verano + 
+                         PrecipitationPromedio_Verano + 
+                         RadiationPromedio_Anual + 
+                         mass_balance_lag1,
+                       data = datos_finales_limpio)
+summary(modelo_corrigido)
+```
+Se puede observar que añadiendo la variable de autoregresión se obtiene un R2 ajustado=0.536, lo que quiere decir que es capaz de explicar el 53.6% de la variabilidad observada en el balance de masas y un p-value significativo, por lo que se puede aceptar que el modelo no es por azar.
+
+### AIC
+```{r}
+# Calidad del modelo ->AIC
+step(object = modelo_corrigido, direction = "both", trace = 1)
+```
+
+```{r}
+# Ajustar el nuevo modelo con la variable de rezago incluida
+modelo_corrigido1 <- lm(mass_balance ~ 
+                         DepthSnowPromedio_Verano + 
+                         TemperaturePromedio_Verano + 
+                         RadiationPromedio_Anual + 
+                         mass_balance_lag1,
+                       data = datos_finales_limpio)
+summary(modelo_corrigido1)
+```
+
+
+### Autocorrelación
+
+Tras incorporar un rezago de la variable dependiente (mass_balance) al modelo de regresión lineal múltiple, se aplicó nuevamente el test de Ljung-Box para evaluar la autocorrelación en los residuos.
+
+```{r}
+Box.test(residuals(modelo_corrigido), lag = 20, type = "Ljung-Box")
+```
+
+El resultado obtenido fue X-squared = 22.872, con 20 grados de libertad y un p-value = 0.2951.
+Dado que el p-value es superior al umbral de significancia (0.05), no se rechaza la hipótesis nula de independencia. Por lo tanto, se concluye que no existe evidencia estadísticamente significativa de autocorrelación en los residuos del modelo corregido.
+Esto indica que la inclusión del componente autorregresivo ha sido efectiva para capturar la dependencia temporal detectada previamente, mejorando el cumplimiento de los supuestos clásicos del modelo de regresión.
+
+### Homocedasticidad
+
+```{r}
+bptest(modelo_corrigido)
+```
+El resultado fue BP = 3.5641, con 5 grados de libertad y un p-value = 0.6137.
+Dado que el p-value es muy superior al nivel de significancia convencional (0.05), no hay evidencia suficiente para rechazar la hipótesis nula de homocedasticidad. En consecuencia, No hay evidencia de falta de homocedasticidad
+
+### Distribuccion normal de los residuos
+
+Test de Jarque Bera 
+
+Hipótesis del test:
+Hipotesis nula (H0):Los datos siguen una distribucción normal
+Hipotesis alternativa (H1):Los datos no siguen una distribucción normal
+
+
+```{r}
+jarque.bera.test(modelo_corrigido$residuals)
+```
+
+En este caso, el resultado del test muestra un estadístico X-squared = 4.5255 y un p-value = 0.1041 Dado que el p-value es mayor que 0.05, no hay evidencia suficiente para rechazar la hipótesis nula, lo que indica que los residuos siguen una distribución normal. 
+
+### Estacionareidad de los residuos
+
+Hipótesis nula (H₀): Los residuos tienen una raíz unitaria, es decir, no son estacionarios.
+Hipótesis alternativa (H₁): Los residuos son estacionarios.
+```{r}
+adf.test(modelo_corrigido$residuals)
+```
+El resultado de la prueba de Dickey-Fuller aumentada (ADF) muestra un estadístico de Dickey-Fuller = -3.1038 y un p-value = 0.1224. Dado que el p-value es mayor que 0.05, no se rechaza la hipótesis nula, lo que sugiere que los residuos no son estacionarios.
+
+Esto indica que, a pesar de la incorporación de un componente autorregresivo en el modelo, los residuos aún presentan dependencia temporal no capturada correctamente, lo que sugiere la necesidad de ajustes adicionales en la estructura del modelo.
+
+
+
+```{r}
+plot(modelo_corrigido)
+```
+## Correlación cruzada
+
+En la correlación cruzada, se analiza la relación entre dos variables en diferentes desfases de tiempo (lags), es decir, cómo una variable influye en otra con cierto retraso o anticipación.
+
+La magnitud de la función de correlación cruzada (CCF) indica qué tan fuerte es la relación entre las variables en cada lag. Si los valores de correlación son altos tanto en lags positivos como negativos, esto sugiere una relación bidireccional, lo que significa que ambas variables pueden influirse mutuamente con cierto desfase en el tiempo. Si la correlación es fuerte solo en los lags positivos, la variable X afecta a la variable Y con un retraso (X precede a Y). Si la correlación es fuerte solo en los lags negativos, la variable Y podría estar afectando a X en el pasado (Y precede a X), lo que indica una relación unidireccional en sentido contrario.
+
+```{r}
+# Temperatura
+ccf(datos_finales$mass_balance  , datos_finales$TemperaturePromedio_Verano, lag.max = 10, main = "Correlación Cruzada entre Balance de masa-Temperatura")
+```
+
+Los valores significativos son aquellos que se encuentran fuera de las líneas azules. Se observa que la mayoría de los coeficientes significativos son negativos, lo que indica una correlación inversa entre la temperatura y el balance de masas: a mayor temperatura, menor balance de masas. Esto sugiere una relación fuerte y consistente a lo largo del tiempo. Además, los valores de correlación son más fuertes en los lags negativos, lo que significa que la temperatura en el pasado influye en el balance de masas en el presente. Por otro lado, no se detectan valores significativos en los lags positivos, lo que confirma que la relación es unidireccional: la temperatura afecta al balance de masas, pero el balance de masas no tiene un impacto significativo sobre la temperatura.
+
+```{r}
+# Radiación
+ccf(datos_finales$mass_balance  , datos_finales$RadiationPromedio_Anual, lag.max = 10, main = "Correlación Cruzada entre Balance de masa-Radiación")
+```
+
+La mayoría de los coeficientes de correlación son negativos, lo que indica que una mayor radiación solar está asociada con una reducción en el balance de masa glaciar. Esto coincide con análisis previos, donde se concluye que a mayor radiación, mayor derretimiento glaciar.
+
+Algunos valores en lags negativos son más pronunciados y caen fuera de las líneas azules, sugiriendo que la radiación en el pasado influyó en la disminución del balance de masa en el presente. No se observan correlaciones positivas destacadas, lo que confirma que la relación es unidireccional: el balance de masa no afecta a la radiación, ya que esta es un factor climático externo.
+
+La correlación negativa en varios lags indica que la radiación no solo impacta el balance de masa en el mismo período, sino que su efecto persiste en el tiempo. Esto podría explicarse porque la radiación provoca la fusión del hielo, y su impacto en el balance de masa no es inmediato, sino que se acumula gradualmente.
+
+```{r}
+# Profundidad de la nieve
+ccf(datos_finales$mass_balance,datos_finales$DepthSnowPromedio_Verano, lag.max = 10, main = "Correlación Cruzada entre Balance de masa-Profundidad de la nieve")
+```
+
+La mayoría de los coeficientes están cerca de 0, lo que sugiere que la profundidad de la nieve no tiene un impacto claro en el balance de masas a lo largo del tiempo. Sin embargo, en lag 0, hay un pico positivo, indicando que una mayor profundidad de nieve en el presente está asociada con un balance de masas más alto. Esto tiene sentido, ya que una mayor acumulación de nieve puede contribuir temporalmente a un balance positivo.
+
+A partir de lags positivos, se observa una tendencia hacia correlaciones negativas, sugiriendo que una gran acumulación de nieve en el presente podría reducir el balance de masas en el futuro, posiblemente debido al derretimiento en los años siguientes. Por otro lado, no hay una correlación fuerte en lags negativos, lo que indica que el balance de masas actual no está influenciado significativamente por la profundidad de la nieve en el pasado.
+
+```{r}
+# Precipitación
+ccf(datos_finales$mass_balance, datos_finales$PrecipitationPromedio_Verano, lag.max = 10, main = "Correlación Cruzada entre Balance de masa-Precipitación")
+```
+
+Se observa un pico positivo en lag 0, lo que indica que una mayor precipitación en el presente está asociada con un balance de masa más alto. Además, hay algunos valores positivos en lags positivos (futuros), aunque ninguno supera el umbral de significancia (líneas azules). Esto sugiere que la precipitación en el presente podría tener un efecto leve pero prolongado en el aumento del balance de masa en el futuro. Sin embargo, dado que las correlaciones no son fuertes, su impacto a largo plazo parece limitado.
+
+No se detectan correlaciones significativas en lags negativos, lo que indica que el balance de masa actual no está influenciado por la precipitación pasada. A diferencia de variables como la radiación o la temperatura, cuyos efectos pueden ser retardados, la precipitación afecta principalmente el balance de masa en el mismo período en que ocurre. Esto tiene sentido, ya que la acumulación de nieve o lluvia tiene un impacto inmediato en la masa del glaciar.
+
+# Análisis ARIMAX
+
+Los modelos SARIMAX (Autoregresivo integrados de medias moviles estacional con variables explicativas) son una estructura matetemática que contiene todas las bondades de un modelo SARIMA adicionalmente, adicionalmente, pueden capturar informacion sobre variables exógeneas que permiten. Dentro del modelo MAX puede ser ARMAX o ARIMAX
+
+```{r}
+# se separan los datos en dos tablas, una de variables exogeneas y otras de variables endogenas
+
+data_exo<-datos_finales[, c("DepthSnowPromedio_Verano", 
+                                                "TemperaturePromedio_Verano", "PrecipitationPromedio_Verano", 
+                                                "RadiationPromedio_Anual")]
+
+data_endo<-datos_finales[, c("mass_balance")]
+```
+
+Variables endógenas. Son aquellas que se determinan dentro del modelo o sistema que se está analizando. Su valor depende de las interacciones y relaciones entre otras variables del modelo
+
+Variables exógenas. Son aquellas que se determinan fuera del modelo o sistema y se toman como dadas. Su valor no depende de las relaciones internas del modelo, sino que influye en él desde el exterior
+
+```{r}
+# Serie temporal de variable dependiente 
+endo_ts<- ts(data_endo, start = c(1934), frequency = 1)
+# Serie temporal de las vairables independientes
+exo_ts <- ts(data_exo, start = c(1934), frequency = 1)
+```
+
+## Análisis de la variable Endógena /ARIMA
+
+```{r}
+#Prueba de Dickey-Fuller
+adf.test(endo_ts)
+```
+
+p-value\>0.05 entonces no es estacionaria
+
+```{r}
+dendo_ts<-diff(endo_ts)
+# prueba de dickeyfuller a la serie diferenciada
+adf.test(dendo_ts)
+
+```
+
+pvalue significativo, por tanto es estacionaria.
+
+```{r}
+layout(matrix(c(1,2),1,2))
+acf(diff(endo_ts),main="Autocorrelacion",  ylab="", ci.col="Red")
+pacf(diff(endo_ts),main="Autocorrelacion Parcial",  ylab="", ci.col="Red")
+
+```
+
+```{r}
+auto.arima(endo_ts,trace = TRUE)
+```
+
+
+
+### ARIMA(0,1,1).
+
+```{r}
+arima011<-Arima(endo_ts, order = c(0,1,1), include.constant = TRUE)
+summary(arima011)
+```
+
+Inicialmente, se analiza el modelo incluyendo un drift, el cual equivale a incorporar una pendiente en la serie. El valor estimado del drift es de -0.0079, lo que indica que, en promedio, la serie disminuye en 0.0079 unidades por período después de haber sido diferenciada. No obstante, su error estándar es de 0.0113, lo que sugiere que su impacto en la predicción es mínimo, dado que el valor del drift es cercano a cero.
+
+Para evaluar la significancia del drift, se lleva a cabo la prueba de Wald, una prueba estadística utilizada para determinar si los coeficientes estimados en un modelo son significativos. En términos generales: si el drift es significativo (valor p \< 0.05), se incluye en el modelo. si no es significativo (valor p ≥ 0.05), se considera eliminarlo.
+
+```{r}
+wald.test(b = coef(arima011), Sigma = vcov(arima011), Terms = 1)
+```
+
+En este caso, se obtiene un p-value de 0.0, lo que indica que el drift es altamente significativo y, en principio, debería incluirse en el modelo. Sin embargo, para contrastar este resultado, se realiza un análisis excluyendo el drift.
+
+```{r}
+arima.011<-Arima(endo_ts, order = c(0,1,1), include.constant = FALSE)
+summary(arima.011)
+```
+
+Al hacerlo, se observa que el modelo sin drift presenta un AIC más bajo (172.32 frente a 173.89 del modelo con drift), lo que indica que es más eficiente en términos de ajuste y parsimonia. Además, el BIC también es menor en el modelo sin drift, lo que refuerza la preferencia por este modelo. Al no incluir el drift, se evita añadir un parámetro innecesario, simplificando el modelo sin perder capacidad predictiva.
+
+```{r}
+wald.test(b = coef(arima.011), Sigma = vcov(arima.011), Terms = 1)
+```
+
+En conclusión, aunque el drift es estadísticamente significativo, el AIC más bajo del modelo sin drift sugiere que este último es preferible. Por lo tanto, se recomienda utilizar el modelo ARIMA(0,1,1) sin drift.
+
+#### Validacion del modelo arima011
+
+##### Intervencion
+
+Se analiza si para algun periodo se observa un error atípico (2 o 3 veces superior al error estándar).
+
+```{r}
+es<-sqrt(arima.011$sig) 
+ts.plot(arima.011$residuals,2*es,-2*es,3*es,-3*es,xlab="Periodo",plot.type="single",ylab="", main="Error de estimacion",lty=c(1,2,2,2,2),col=c("black","red","red","blue","blue")) 
+```
+
+La mayoría de los residuos permanecen dentro del rango de ±2σ (rojo), lo que indica que el modelo capta bien la variabilidad de la serie. Sólo algunos valores extremos están cerca de los límites ±3σ (azul), lo cual es normal en cualquier serie temporal.
+
+##### Autocorrelación
+
+Para analizar la autocorrelación de los residuos, se aplica la prueba de Ljung-Box, la cual evalúa si los residuos del modelo presentan autocorrelación significativa o si pueden considerarse ruido blanco (es decir, si el modelo captura adecuadamente la estructura de los datos). Criterios: • p-value \< 0.05, los residuos no son ruido blanco, lo que indica que el modelo no captura toda la estructura de los datos y existe autocorrelación • p-value \> 0.05, los residuos son ruido blanco, lo que indica que el modelo captura bien la estructura de los datos y no hay autocorrelación significativa.
+
+```{r}
+checkresiduals(arima.011)
+```
+
+En este caso, dado que el p-value = 0.3999, se concluye que los residuos no presentan autocorrelación significativa, lo que indica que el modelo ARIMAX (0,1,1) es adecuado para representar la serie temporal.
+
+##### Homocedasticidad
+
+Para evaluar la homocedasticidad (es decir, si la varianza de los residuos es constante a lo largo del tiempo), se aplica la prueba de Box-Ljung a los residuos al cuadrado.
+
+```{r}
+Box.test(arima.011$residuals^2, lag=2, type = "Ljung-Box")
+```
+
+En este caso, el resultado del test muestra un estadístico X-squared = 1.2258 con 2 grados de libertad y un p-value = 0.5418. Dado que el p-value es mayor que 0.05, no se rechaza la hipótesis nula, lo que sugiere que no hay evidencia de heterocedasticidad en los residuos. Esto indica que la varianza de los residuos se mantiene constante, cumpliendo con el supuesto de homocedasticidad.
+
+##### Normalidad
+
+Para evaluar la normalidad de los residuos, se aplica la prueba de Jarque-Bera
+
+```{r}
+jarque.bera.test(arima.011$residuals)
+```
+
+En este caso, el resultado del test muestra un estadístico X-squared = 1.1378 con 2 grados de libertad y un p-value = 0.5661. Dado que el p-value es mayor que 0.05, no se rechaza la hipótesis nula, lo que sugiere que los residuos siguen una distribución normal. Esto indica que el modelo cumple con el supuesto de normalidad en los residuos, lo cual es deseable para la validez de las inferencias estadísticas.
+
+##### Estacionariedad de los residuos
+Para evaluar la estacionariedad de los residuos y asegurar que se comporten como ruido blanco, se aplica la prueba de Dickey-Fuller aumentada (ADF). Esta prueba tiene como hipótesis:
+
+•	Hipótesis nula (H₀): Los residuos no se comportan como ruido blanco (no son estacionarios).
+•	Hipótesis alternativa (H₁): Los residuos se comportan como ruido blanco (son estacionarios).
+
+```{r}
+adf.test(arima.011$residuals)
+```
+El resultado de la prueba muestra un estadístico de Dickey-Fuller = -3.6123 y un p-value = 0.03691 Dado que el p-value es menor que 0.05,hay evidencia sufiente para rechazar la hipótesis nula, lo que sugiere que los residuos  son estacionarios y, por lo tanto,  se comportan completamente como ruido blanco (sin patrones estructurados). 
+
+#### ARIMA(111)
+
+Este modelo ARIMA(1,1,1) es ligeramente más complejo que el anterior, ya que incluye un componente autorregresivo (p=1) y un componente de media móvil (q=1). Esta mayor complejidad podría ser útil si existe una dependencia temporal que el modelo anterior no logra capturar completamente
+
+```{r}
+arima111<-Arima(endo_ts, order = c(1,1,1), include.constant = TRUE)
+summary(arima111)
+```
+
+Inicialmente, se analiza el modelo incluyendo un drift, el cual equivale a incorporar una pendiente en la serie. El valor estimado del drift es de -0.0073, lo que indica que, en promedio, la serie disminuye en 0.0073 unidades por período después de haber sido diferenciada. No obstante, su error estándar es de 0.0121, lo que sugiere que su impacto en la predicción es mínimo, dado que el valor del drift es cercano a cero.
+
+Para evaluar la significancia del drift, se lleva a cabo la prueba de Wald, una prueba estadística utilizada para determinar si los coeficientes estimados en un modelo son significativos. En términos generales: si el drift es significativo (valor p \< 0.05), se incluye en el modelo. si no es significativo (valor p ≥ 0.05), se considera eliminarlo.
+
+```{r}
+wald.test(b = coef(arima111), Sigma = vcov(arima111), Terms = 1)
+```
+
+En este caso, se obtiene un p-value\>0.05, lo que indica que el drift no es significativo y, en principio, debería eliminarse del modelo. Luego, se realiza un análisis excluyendo el drift.
+
+```{r}
+arima.111<-Arima(endo_ts, order = c(1,1,1), include.constant = FALSE)
+summary(arima.111)
+```
+
+Al hacerlo, se observa que el modelo sin drift presenta un AIC más bajo (173.51 frente a 175.18 del modelo con drift), lo que indica que es más eficiente en términos de ajuste y parsimonia. Además, el BIC también es menor en el modelo sin drift, lo que refuerza la preferencia por este modelo. Al no incluir el drift, se evita añadir un parámetro innecesario, simplificando el modelo sin perder capacidad predictiva.
+
+```{r}
+wald.test(b = coef(arima.111), Sigma = vcov(arima.111), Terms = 1)
+```
+
+En este caso, se obtiene un p-value\>0.05, lo que indica que el drift no es significativo y, en principio, debería elinarse del modelo, reforzando los resultados obtenidos en el anterior test.
+
+En conclusión, el drift no es estadísticamente significativo, por lo tanto, se trabjará con el modelo ARIMA(1,1,1) sin drift.
+
+##### Intervencion
+
+Se analiza si para algun periodo se observa un error atípico (2 o 3 veces superior al error estándar).
+
+```{r}
+es<-sqrt(arima.111$sig) 
+ts.plot(arima.111$residuals,2*es,-2*es,3*es,-3*es,xlab="Periodo",plot.type="single",ylab="", main="Error de estimación",lty=c(1,2,2,2,2),col=c("black","red","red","blue","blue")) 
+```
+
+La mayoría de los residuos permanecen dentro del rango de ±2σ (rojo), lo que indica que el modelo capta bien la variabilidad de la serie. Sólo algunos valores extremos están cerca de los límites ±3σ (azul), lo cual es normal en cualquier serie temporal.
+
+##### Autocorrelación
+
+Para analizar la autocorrelación de los residuos, se aplica la prueba de Ljung-Box, la cual evalúa si los residuos del modelo presentan autocorrelación significativa o si pueden considerarse ruido blanco (es decir, si el modelo captura adecuadamente la estructura de los datos). Criterios: • p-value \< 0.05, los residuos no son ruido blanco, lo que indica que el modelo no captura toda la estructura de los datos y existe autocorrelación • p-value \> 0.05, los residuos son ruido blanco, lo que indica que el modelo captura bien la estructura de los datos y no hay autocorrelación significativa.
+
+```{r}
+checkresiduals(arima.111)
+```
+
+En este caso, dado que el p-value = 0.4643, se concluye que los residuos no presentan autocorrelación significativa, lo que indica que el modelo ARIMA (1,1,1) es adecuado para representar la serie temporal.
+
+##### Homocedasticidad
+
+Para evaluar la homocedasticidad (es decir, si la varianza de los residuos es constante a lo largo del tiempo), se aplica la prueba de Box-Ljung a los residuos al cuadrado.
+
+```{r}
+Box.test(arima.111$residuals^2, lag=2, type = "Ljung-Box")
+```
+
+En este caso, el resultado del test muestra un estadístico X-squared = 0.86226 con 2 grados de libertad y un p-value = 0.6498. Dado que el p-value es mayor que 0.05, no se rechaza la hipótesis nula, lo que sugiere que no hay evidencia de heterocedasticidad en los residuos. Esto indica que la varianza de los residuos se mantiene constante, cumpliendo con el supuesto de homocedasticidad.
+
+##### Normalidad
+
+Para evaluar la normalidad de los residuos, se aplica la prueba de Jarque-Bera
+
+```{r}
+jarque.bera.test(arima.111$residuals)
+```
+
+En este caso, el resultado del test muestra un estadístico X-squared = 0.82867 con 2 grados de libertad y un p-value = 0.6608. Dado que el p-value es mayor que 0.05, no se rechaza la hipótesis nula, lo que sugiere que los residuos siguen una distribución normal. Esto indica que el modelo cumple con el supuesto de normalidad en los residuos, lo cual es deseable para la validez de las inferencias estadísticas.
+
+Apartir de este momento se agregara variables exogenas
+
+### Análsis de las variables Exógenas
+
+
+```{r}
+# se aplica el test de estacionariedad a las variables exógenas
+apply(exo_ts,2,adf.test)
+```
+
+se puede ver que todas no son estacionarias, se aplica diferenciación
+
+```{r}
+dexo_ts<-diff(exo_ts)
+# aplico el test de estacionariedad a las variables exógenas diferenciadas
+apply(dexo_ts,2,adf.test)
+```
+
+una vez aplicada la diferenciación se puede ver que todas son son estacionarias, ya que tienen un p-value significativo.
+
+Ahora se representan las series temporales de las variables exógenas normal y diferenciadas
+
+```{r}
+# Se representa 
+
+plot(exo_ts, ylab = "Profundidad Nieve/Radiación / Precipitación / Temp")
+grid(nx = 20, ny = 20, col = "gray", lty = "dotted")
+plot(diff(exo_ts))
+grid(nx = 20, ny = 20, col = "gray", lty = "dotted")
+```
+
+```{r}
+#Identificar los valores P y Q
+layout(matrix(c(1,2),1,2))
+acf(diff(exo_ts[,"RadiationPromedio_Anual"]), main="ACF Radiación (diferenciada)", ylab="", ci.col="Red")
+pacf(diff(exo_ts[,"RadiationPromedio_Anual"]), main="PACF Radiación (diferenciada)", ylab="", ci.col="Red")
+```
+•	ACF: No se observan rezagos con valores significativamente altos; todos los valores se encuentran dentro de los intervalos de confianza.
+•	PACF: los dos primeros valores son significativos, y los siguientes se encuentran dentro de los límites de confianza, podría indicar un proceso AR (1) o AR (2).
+
+```{r}
+#Identificar los valores P y Q
+layout(matrix(c(1,2),1,2))
+acf(diff(exo_ts[,"PrecipitationPromedio_Verano"]), main="ACF Precipitación (diferenciada)", ylab="", ci.col="Red")
+pacf(diff(exo_ts[,"PrecipitationPromedio_Verano"]), main="PACF Precipitación (diferenciada)", ylab="", ci.col="Red")
+```
+•	ACF, no hay rezagos con valores significativamente altos.
+•	PACF: Los primeros cuatro rezagos son significativos, lo que podría indicar un proceso AR (1) o AR (2).
+
+```{r}
+#Identificar los valores P y Q
+layout(matrix(c(1,2),1,2))
+acf(diff(exo_ts[,"TemperaturePromedio_Verano"]), main="ACF Temperatura (diferenciada)", ylab="", ci.col="Red")
+pacf(diff(exo_ts[,"TemperaturePromedio_Verano"]), main="PACF Temperatura (diferenciada)", ylab="", ci.col="Red")
+```
+•	ACF, la presencia de algunos rezagos significativos sugiere que podría haber un componente MA en el modelo.
+•	PACF: los dos primeros valores son significativos, y los siguientes se encuentran dentro de los límites de confianza, podría indicar un proceso AR (1) o AR (2).
+
+```{r}
+#Identificar los valores P y Q
+layout(matrix(c(1,2),1,2))
+acf(diff(exo_ts[,"DepthSnowPromedio_Verano"]), main="ACF Profundidad de la nieve (diferenciada)", ylab="", ci.col="Red")
+pacf(diff(exo_ts[,"DepthSnowPromedio_Verano"]), main="PACF Profundidad de la nieve (diferenciada)", ylab="", ci.col="Red")
+```
+•	ACF: A partir del rezago 14, se observa un valor significativo, lo que sugiere la presencia de una dependencia temporal a largo plazo.
+•	PACF: los dos primeros valores son significativos, y los siguientes se encuentran dentro de los límites de confianza, podría indicar un proceso AR (1) o AR (2).
+
+## ARIMAX(0,1,1)
+
+```{r}
+# Ajustar modelo ARMAX final
+modelo_armax <- arima(endo_ts, order = c(0,1,1), xreg = exo_ts)
+summary(modelo_armax)
+```
+
+Para determinar qué variables tienen un mayor impacto en el modelo, se analizan los coeficientes de las variables exógenas.
+
+la profundidad de la nieve en verano tiene un impacto positivo en el balance de masa. Específicamente, si la profundidad de la nieve en verano aumenta en 1 unidad, el balance de masa aumenta en 0.2519 unidades. Este resultado tiene bastante sentido, ya que una mayor acumulación de nieve en verano contribuye positivamente al balance de masa.
+
+la temperatura en verano tiene un impacto negativo en el balance de masa. Si el promedio de la temperatura en verano aumenta en 1 unidad, el balance de masa se reduce en 0.4177 unidades. Esto también es coherente, ya que temperaturas más altas pueden acelerar el derretimiento de la nieve y el hielo, reduciendo así el balance de masa.
+
+La precipitación en verano tiene un impacto positivo, aunque menor, en el balance de masa. Un aumento de 1 unidad en la precipitación en verano incrementa el balance de masa en 0.0413 unidades. Este efecto, aunque pequeño, es consistente con la idea de que la precipitación contribuye a la acumulación de nieve y hielo.
+
+Finalmente, la radiación anual tiene un impacto negativo casi nulo en el balance de masa. Un aumento de 1 unidad en la radiación anual reduce el balance de masa en 0.0044 unidades, lo que indica que su influencia es prácticamente insignificante.
+
+Según este modelo ARIMAX (0,1,1), las variables que más impacto tienen sobre el balance de masa son la temperatura en verano y la profundidad de la nieve en verano. Por su parte, la precipitación en verano y la radiación anual tienen un impacto mucho menor. Además, se realiza una prueba de calidad mediante el AIC para evaluar si el modelo mejora al incluir o excluir algunas de estas variables.
+
+```{r}
+# Modelo con todas las variables actuales (modelo base)
+modelo_base <- arima(endo_ts, order = c(0,1,1), xreg = exo_ts)
+AIC(modelo_base)
+
+# Modelo sin la variable de radiación (porque vimos que tenía poco impacto)
+modelo_sin_radiacion <- arima(endo_ts, order = c(0,1,1), 
+                              xreg = exo_ts[, c("DepthSnowPromedio_Verano", 
+                                                 "TemperaturePromedio_Verano", 
+                                                 "PrecipitationPromedio_Verano")])
+AIC(modelo_sin_radiacion)
+
+# Modelo sin la variable de precipitación
+modelo_sin_precipitacion <- arima(endo_ts, order = c(0,1,1), 
+                                  xreg = exo_ts[, c("DepthSnowPromedio_Verano", 
+                                                     "TemperaturePromedio_Verano", 
+                                                     "RadiationPromedio_Anual")])
+AIC(modelo_sin_precipitacion)
+
+# Comparar los AIC
+aic_values <- data.frame(
+  Modelo = c("Base", "Sin Radiación", "Sin Precipitación"),
+  AIC = c(AIC(modelo_base), AIC(modelo_sin_radiacion), AIC(modelo_sin_precipitacion))
+)
+
+print(aic_values)
+
+```
+
+se obtiene que el mejor modelo es sin incluir la radiacion.
+
+
+#### Evaluacion
+
+##### Normalidad
+
+Para evaluar la normalidad de los residuos se aplica la prueba de Jarque Bera .
+Hipótesis nula (H₀): Los residuos siguen una distribución normal.
+Hipótesis alternativa (H₁): Los residuos no siguen una distribución normal.
+
+```{r}
+residul<-resid(modelo_armax)
+jarque.bera.test(residul)
+```
+En este caso, el resultado del test muestra un estadístico X-squared = 2.3218 con 2 grados de libertad y un p-value = 0.3132 Dado que el p-value es mayor que 0.05, no se rechaza la hipótesis nula, lo que sugiere que los residuos siguen una distribución normal. 
+
+##### Estacionariedad de los residuos
+Para evaluar la normalidad de los residuos y asegurar que se comporten como ruido blanco, se aplica la prueba de Dickey-Fuller aumentada (ADF). Esta prueba tiene como hipótesis:
+
+•	Hipótesis nula (H₀): Los residuos no se comportan como ruido blanco (no son estacionarios).
+•	Hipótesis alternativa (H₁): Los residuos se comportan como ruido blanco (son estacionarios).
+
+```{r}
+adf.test(residul)
+```
+El resultado de la prueba muestra un estadístico de Dickey-Fuller = -3.192 y un p-value = 0.0944. Dado que el p-value es mayor que 0.05, no se rechaza la hipótesis nula, lo que sugiere que los residuos no son estacionarios y, por lo tanto, no se comportan completamente como ruido blanco. Esto indica que el modelo podría no estar capturando toda la estructura de la serie.
+
+##### Autocorrelación
+
+Para analizar la autocorrelación de los residuos, se aplica la prueba de Ljung-Box, la cual evalúa si los residuos del modelo presentan autocorrelación significativa o si pueden considerarse ruido blanco (es decir, si el modelo captura adecuadamente la estructura de los datos). Criterios:
+
+p-value\<0.05, los residuos no son ruido blanco, (el modelo no captura toda la estructura de los datos y hay autocorrelación) p-value\>0.05, los residuos son ruido blanco, lo que indica que el modelo captura bien la estructura d elos datos.
+
+```{r}
+checkresiduals(modelo_armax)
+```
+
+En este caso, dado que el p-value = 0.9272, se concluye que los residuos no presentan autocorrelación significativa, lo que indica que el modelo ARIMAX(0,1,1) es adecuado para representar la serie temporal.
+
+##### Homocedasticidad
+
+Para evaluar la homocedasticidad (es decir, si la varianza de los residuos es constante a lo largo del tiempo), se aplica la prueba de Box-Ljung a los residuos al cuadrado.
+
+Hipótesis nula (H₀): No hay autocorrelación en los residuos al cuadrado (los errores son homocedásticos).
+Hipótesis alternativa (H₁): Hay autocorrelación en los residuos al cuadrado (posible heterocedasticidad).
+
+```{r}
+Box.test(modelo_armax$residuals^2, lag=2, type = "Ljung-Box")
+```
+
+En este caso, el resultado del test muestra un estadístico X-squared = 1.4333 con 2 grados de libertad y un p-value = 0.4884. Dado que el p-value es mayor que 0.05, no se rechaza la hipótesis nula, lo que sugiere que no hay evidencia de heterocedasticidad en los residuos. Esto indica que la varianza de los residuos se mantiene constante, cumpliendo con el supuesto de homocedasticidad.
+
+## ARIMAX(1,1,1)
+
+```{r}
+# Modelo ARMAX(1,1,1)
+arimax111 <- arima(endo_ts, order = c(1,1,1), xreg = exo_ts)
+summary(arimax111)
+```
+
+Para determinar qué variables tienen un mayor impacto en el modelo ARMAX(1,1,1), se analizan los coeficientes de las variables exógenas.
+
+la profundidad de la nieve en verano tiene un impacto positivo en el balance de masa. Específicamente, si la profundidad de la nieve en verano aumenta en 1 unidad, el balance de masa aumenta en 0.2533 unidades. Este resultado tiene bastante sentido, ya que una mayor acumulación de nieve en verano contribuye positivamente al balance de masa.
+
+la temperatura en verano tiene un impacto negativo en el balance de masa. Si el promedio de la temperatura en verano aumenta en 1 unidad, el balance de masa se reduce en 0.4266 unidades. Esto también es coherente, ya que temperaturas más altas pueden acelerar el derretimiento de la nieve y el hielo, reduciendo así el balance de masa.
+
+La precipitación en verano tiene un impacto positivo, aunque menor, en el balance de masa. Un aumento de 1 unidad en la precipitación en verano incrementa el balance de masa en 0.0266 unidades. Este efecto, aunque pequeño, es consistente con la idea de que la precipitación contribuye a la acumulación de nieve y hielo.
+
+La radiación anual tiene un impacto negativo casi nulo en el balance de masa. Un aumento de 1 unidad en la radiación anual reduce el balance de masa en 0.0057 unidades, lo que indica que su influencia es prácticamente insignificante.
+
+Según este modelo ARIMAX (1,1,1), las variables que más impacto tienen sobre el balance de masa son la temperatura en verano y la profundidad de la nieve en verano. Por su parte, la precipitación en verano y la radiación anual tienen un impacto mucho menor. coincidiendo con el modelo anterior.
+
+Además, se realiza una prueba de calidad mediante el AIC para evaluar si el modelo mejora al incluir o excluir algunas de estas variables.
+
+```{r}
+# Modelo con todas las variables actuales (modelo base)
+modelo_base <- arima(endo_ts, order = c(1,1,1), xreg = exo_ts)
+AIC(modelo_base)
+
+# Modelo sin la variable de radiación (porque vimos que tenía poco impacto)
+modelo_sin_radiacion <- arima(endo_ts, order = c(0,1,1), 
+                              xreg = exo_ts[, c("DepthSnowPromedio_Verano", 
+                                                 "TemperaturePromedio_Verano", 
+                                                 "PrecipitationPromedio_Verano")])
+AIC(modelo_sin_radiacion)
+
+# Modelo sin la variable de precipitación
+modelo_sin_precipitacion <- arima(endo_ts, order = c(0,1,1), 
+                                  xreg = exo_ts[, c("DepthSnowPromedio_Verano", 
+                                                     "TemperaturePromedio_Verano", 
+                                                     "RadiationPromedio_Anual")])
+AIC(modelo_sin_precipitacion)
+
+# Comparar los AIC
+aic_values <- data.frame(
+  Modelo = c("Base", "Sin Radiación", "Sin Precipitación"),
+  AIC = c(AIC(modelo_base), AIC(modelo_sin_radiacion), AIC(modelo_sin_precipitacion))
+)
+
+print(aic_values)
+```
+
+obtengo que el mejor modelo es sin incluir la radiacion.
+
+#### Evaluacion
+
+##### Normalidad
+
+Para evaluar la normalidad de los residuos se aplica la prueba de Jarque Bera .
+Hipótesis nula (H₀): Los residuos siguen una distribución normal.
+Hipótesis alternativa (H₁): Los residuos no siguen una distribución normal.
+
+```{r}
+residul2<-resid(arimax111)
+jarque.bera.test(residul2)
+```
+En este caso, el resultado del test muestra un estadístico X-squared = 3.1131 con 2 grados de libertad y un p-value = 0.2109 Dado que el p-value es mayor que 0.05, no se rechaza la hipótesis nula, lo que sugiere que los residuos siguen una distribución normal. Esto indica que el modelo cumple con el supuesto de normalidad en los residuos, lo cual es deseable para la validez de las inferencias estadísticas.
+
+##### Estacionariedad de los residuos
+
+Para evaluar la normalidad de los residuos y asegurar que se comporten como ruido blanco, se aplica la prueba de Dickey-Fuller aumentada (ADF). Esta prueba tiene como hipótesis:
+
+•	Hipótesis nula (H₀): Los residuos no se comportan como ruido blanco (no son estacionarios).
+•	Hipótesis alternativa (H₁): Los residuos se comportan como ruido blanco (son estacionarios).
+
+```{r}
+adf.test(residul2)
+```
+En este caso, el resultado de la prueba muestra un estadístico de Dickey-Fuller = -3.5589 y un p-value = 0.04159. Dado que el p-value es menor que 0.05, se rechaza la hipótesis nula, lo que indica que los residuos son estacionarios y, por lo tanto, se comportan como ruido blanco. Esto sugiere que el modelo captura adecuadamente la estructura de la serie, y los residuos no presentan patrones no modelados, lo cual es un resultado favorable para la validez del modelo.
+
+
+##### Autocorrelación
+
+Para analizar la autocorrelación de los residuos, se aplica la prueba de Ljung-Box, la cual evalúa si los residuos del modelo presentan autocorrelación significativa o si pueden considerarse ruido blanco (es decir, si el modelo captura adecuadamente la estructura de los datos). Criterios: • p-value \< 0.05, los residuos no son ruido blanco, lo que indica que el modelo no captura toda la estructura de los datos y existe autocorrelación • p-value \> 0.05, los residuos son ruido blanco, lo que indica que el modelo captura bien la estructura de los datos y no hay autocorrelación significativa.
+
+```{r}
+checkresiduals(arimax111)
+```
+
+En este caso, dado que el p-value = 0.9348, se concluye que los residuos no presentan autocorrelación significativa, lo que indica que el modelo ARIMAX (1,1,1) es adecuado para representar la serie temporal.
+
+##### Homocedasticidad
+
+Para evaluar la homocedasticidad (es decir, si la varianza de los residuos es constante a lo largo del tiempo), se aplica la prueba de Box-Ljung a los residuos al cuadrado.
+
+Hipótesis nula (H₀): No hay autocorrelación en los residuos al cuadrado (los errores son homocedásticos).
+Hipótesis alternativa (H₁): Hay autocorrelación en los residuos al cuadrado (posible heterocedasticidad).
+
+
+```{r}
+Box.test(arimax111$residuals^2, lag=2, type = "Ljung-Box")
+```
+
+En este caso, el resultado del test muestra un estadístico X-squared = 1.5558 con 2 grados de libertad y un p-value = 0.4594. Dado que el p-value es mayor que 0.05, no se rechaza la hipótesis nula, lo que sugiere que no hay evidencia de heterocedasticidad en los residuos. Esto indica que la varianza de los residuos se mantiene constante, cumpliendo con el supuesto de homocedasticidad.
