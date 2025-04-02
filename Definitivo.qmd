@@ -1,13 +1,20 @@
 ---
-title: "TFM"
-autor: "Bryan"
+title: "TFM; Meteorología y Cambios climáticos: Efectos en un Glaciar de los Alpes"
+autor: "Bryan Jimenez"
 format: html
 editor: visual
 ---
 
+# **Objetivo**
+
+El presente estudio tiene como objetivo analizar el impacto del cambio climático en el glaciar Aletsch, ubicado en los Alpes suizos. Para ello, se construirán modelos estadísticos que expliquen el impacto de cada una de estas variables sobre el balance de masa, identificando aquellas con mayor incidencia en el comportamiento del glaciar.
+
+De manera más específica, se evaluará la tendencia del balance de masa en relación con los efectos del cambio climático, utilizando análisis de datos y comparación de modelos estadísticos. Este enfoque busca mejorar la comprensión de cómo los cambios en las condiciones climáticas afectan la dinámica del glaciar Aletsch, aportando evidencia relevante para la discusión sobre los impactos del cambio climático en los glaciares alpinos.
+
 # Carga de datos
 
 ```{r}
+# Librerias
 library(ggplot2)
 library(zoo)
 library(plotly)
@@ -16,7 +23,9 @@ library(tidyr)
 library(TSA)
 library(gridExtra)
 library(lmtest)
-
+library(kableExtra)
+#install.packages("kableExtra")
+library(knitr)
 library(forecast)
 library(tseries)
 #!install.packages("MTS")
@@ -76,7 +85,7 @@ data_radiacion$Fecha <- as.Date(with(data_radiacion, paste(V1, V2, V3, sep = "-"
 
 # Tratamiento de los datos
 
-## rellenar valores faltantes de Profundidad de la nieve
+## Rellenar valores faltantes de Profundidad de la nieve
 
 Durante el proceso de descarga de datos, se identificó la presencia de valores faltantes en la tabla de profundidad de la nieve. Se observara que, en algunos meses, los registros diarios estaban incompletos y presentaban valores distribuidos de manera aleatoria, sin una secuencia clara.
 
@@ -207,7 +216,7 @@ promedioPorMes <- data_temperatura %>%
   group_by(Mes) %>%
   summarise(TemperaturaPromedio = mean(Temperature, na.rm = TRUE), .groups = "drop")
 
-# Convertir Mes a numérico para evitar problemas en la gráfica
+# Convertir Mes a numérico 
 promedioPorMes$Mes <- as.numeric(promedioPorMes$Mes)
 
 # Crear el gráfico interactivo con líneas de referencia
@@ -290,7 +299,6 @@ grafico_interactivo <- plot_ly(sumaPorMesPrecip,
 
 # Mostrar el gráfico interactivo
 grafico_interactivo
-
 ```
 
 ```{r}
@@ -477,7 +485,12 @@ colSums(is.na(datos_combinados))  # Contar valores NA por columna
 ```
 
 ```{r}
-datos_combinados[!complete.cases(datos_combinados),] # se mira los datos faltantes
+# Filtrar filas con valores faltantes
+datos_combinados[!complete.cases(datos_combinados), ] |>
+  kable() |>
+  kable_styling(full_width = FALSE) |>
+  scroll_box(height = "400px")
+
 ```
 
 ### Observaciones para rellenar los valores faltantes en la radiación
@@ -621,21 +634,13 @@ plot_ly(
 
 ### Observaciones para rellenar los valores faltantes de las Precipitaciones
 
-Hay un total de 108 valores faltantes Distribuccion de los valores faltantes: los valores faltantes estan en los años 2014,2016 (sólo 2 dias), 2017,2018,2019, 2021 (estos 4 últimos son los que mas valores faltantes tienen). Falta casi el mes entero de:
+En los datos analizados, se detectaron 108 valores faltantes de precipitación, concentrados principalmente entre 2017 y 2019. En ciertos períodos, como enero de 2019, diciembre de 2018 y enero de 2017, hay ausencias de datos que abarcan casi un mes completo.
 
--   Marzo del 2021
+La precipitación no muestra un patrón diario definido, pero al examinar su comportamiento mensual, se observa que algunos meses registran lluvias notablemente más intensas que otros. Dado que existen lapsos prolongados sin registros (como meses casi incompletos), no es viable aplicar métodos de interpolación directa para imputar los datos faltantes. Al analizar la distribución histórica, se identificó que diciembre, enero, marzo y abril suelen ser los meses con mayores volúmenes de precipitación. Abril resulta especialmente útil para este análisis, ya que, a diferencia de los otros meses, no presenta valores faltantes en ningún año.
 
--   Enero del 2019
+Para imputar los datos faltantes, se procedió de la siguiente manera: 1. Se calcularon la media y la desviación estándar de la precipitación en abril para cada año. 2. Los meses con datos incompletos (como enero o diciembre) se completaron generando valores aleatorios basados en la distribución estadística de abril del mismo año.
 
--   Diciembre del 2018
-
--   Enero del 2017
-
--   Febrero del 2014
-
-En términos generales, las precipitaciones no siguen un patrón diario claro. Sin embargo, al analizar la media mensual, se observa que algunos meses presentan mayores niveles de lluvia que otros, similar a lo que ocurre con la radiación. No obstante, en este caso, no se procederá a rellenar los valores faltantes de la misma manera, ya que casi todo el mes carece de datos.
-
-Diciembre, enero y marzo destacan como meses de alta precipitación. Dado que abril no presenta días faltantes y también pertenece al grupo de meses con mayores lluvias, se calcularán la media y la desviación estándar de febrero para cada año. Con base en estos valores, se imputarán los datos faltantes de cada año, asegurando así la conservación de la media y la varianza anual.
+Este método asegura que se mantengan tanto la media anual como la variabilidad natural de los datos, evitando introducir sesgos artificiales y respetando los patrones estacionales observados.
 
 ```{r}
 # Calcular la media y desviación estándar de abril de cada año
@@ -832,7 +837,7 @@ full_model<- lm(mass_balance~., data =datos_finales )
 summary(full_model)
 ```
 
-El modelo con todas las variables introducidas tiene un R2 ajustado=0.5429, lo que quiere decir que es capaz de explicar el 54.29% de la variabilidad observada en el balance de masas y un p-value significativo, por lo que se puede aceptar que el modelo no es por azar.
+El modelo con todas las variables introducidas tiene un R2 ajustado=0.5628, lo que quiere decir que es capaz de explicar el 56.28% de la variabilidad observada en el balance de masas y un p-value significativo, por lo que se puede aceptar que el modelo no es por azar.
 
 ### AIC
 
@@ -859,7 +864,6 @@ y <- datos_finales$mass_balance
 lasso_model <- cv.glmnet(X, y, alpha = 1) # LASSO usa alpha = 1
 coef(lasso_model, s = "lambda.min") # Ver variables seleccionadas
 ```
-
 
 ### Relación lineal entre los predictores numéricos y las variables respuesta
 
@@ -901,7 +905,6 @@ Se cumple la linealidad para todos los predictores
 
 # Modelo Regresión Lineal Múltiple
 
-
 Confirmación del modelo
 
 ```{r}
@@ -909,6 +912,7 @@ best_model <- lm(mass_balance~ DepthSnowPromedio_Verano+TemperaturePromedio_Vera
 
 summary(best_model)
 ```
+
 El modelo con las variables elegidas tiene un R2 ajustado=0.5129, lo que quiere decir que es capaz de explicar el 51.29% de la variabilidad observada en el balance de masas y un p-value significativo, por lo que se puede aceptar que el modelo no es por azar.
 
 El valor matemático empleado para determinar la calidad del modelo va a ser Akaike(AIC).
@@ -940,21 +944,19 @@ Aunque el AIC recomienda eliminar la precipitación, hay razones sólidas para m
 
 ### Distribuccion normal de los residuos
 
-Test de Jarque Bera 
-El test de Jarque-Bera es una prueba de hipótesis que se basa en dos propiedades de la distribución normal: (Jarque, 1980)
-	Asimetría (skewness): Mide la falta de simetría en la distribución de los datos. En una distribución normal, la asimetría es 0.
-	Curtosis (kurtosis): Mide la "cola" de la distribución, es decir, cuánta masa se concentra en las colas en comparación con una distribución normal. En una distribución normal, la curtosis es 3.
+Test de Jarque Bera El test de Jarque-Bera es una prueba de hipótesis que se basa en dos propiedades de la distribución normal: (Jarque, 1980) Asimetría (skewness): Mide la falta de simetría en la distribución de los datos. En una distribución normal, la asimetría es 0. Curtosis (kurtosis): Mide la "cola" de la distribución, es decir, cuánta masa se concentra en las colas en comparación con una distribución normal. En una distribución normal, la curtosis es 3.
 
 Hipótesis del test:
-〖Hipotesis nula (H〗_0):Los datos siguen una distribucción normal
-〖Hipotesis alternativa (H〗_1):Los datos no siguen una distribucción normal
 
+-   Hipotesis nula H0: Los datos siguen una distribucción normal
+
+-   Hipotesis alternativa H1: Los datos no siguen una distribucción normal
 
 ```{r}
 jarque.bera.test(best_model$residuals)
 ```
 
-En este caso, el resultado del test muestra un estadístico X-squared = 2.5294 y un p-value = 0.2823 Dado que el p-value es mayor que 0.05, no hay evidencia suficiente para rechazar la hipótesis nula, lo que indica que los residuos siguen una distribución normal. 
+En este caso, el resultado del test muestra un estadístico X-squared = 2.5294 y un p-value = 0.2823 Dado que el p-value es mayor que 0.05, no hay evidencia suficiente para rechazar la hipótesis nula, lo que indica que los residuos siguen una distribución normal.
 
 ```{r}
 plot(best_model)
@@ -978,19 +980,27 @@ La línea roja muestra una tendencia no completamente plana, lo que podría indi
 
 Test de Breusch-Pagan
 
-Hipótesis nula (H₀): Los errores tienen varianza constante (homocedasticidad). Hipótesis alternativa (H₁): Los errores presentan heterocedasticidad (varianza no constante).
+-   Hipótesis nula (H₀): Los errores tienen varianza constante (homocedasticidad).
+
+-   Hipótesis alternativa (H₁): Los errores presentan heterocedasticidad (varianza no constante).
 
 ```{r}
 bptest(best_model)
 ```
 
-no hay suficiente evidencia para afirmar que existe heterocedasticidad. Se puede asumir que los residuos cumplen con la homocedasticidad.
+No hay suficiente evidencia para afirmar que existe heterocedasticidad. Se puede asumir que los residuos cumplen con la homocedasticidad.
 
 luego, No hay evidencias de falta de homocedasticidad.
 
 ### Análisis de Inflación de Varianza (VIF)
 
-El VIF (Variance Inflation Factor) es una métrica utilizada para detectar la presencia de colinealidad entre las variables independientes de un modelo de regresión. Un valor elevado de VIF indica que una variable está altamente correlacionada con otra(s), lo que puede afectar la estabilidad y la interpretabilidad de los coeficientes del modelo. Criterios: • VIF \< 5 → No hay colinealidad problemática. • VIF entre 5 y 10 → Existe moderada colinealidad, revisar la variable. • VIF \> 10 → Alta colinealidad, la variable debería ser reconsiderada.
+El VIF (Variance Inflation Factor) es una métrica utilizada para detectar la presencia de colinealidad entre las variables independientes de un modelo de regresión. Un valor elevado de VIF indica que una variable está altamente correlacionada con otra(s), lo que puede afectar la estabilidad y la interpretabilidad de los coeficientes del modelo. Criterios:
+
+-   VIF \< 5 → No hay colinealidad problemática.
+
+-   VIF entre 5 y 10 → Existe moderada colinealidad, revisar la variable.
+
+-   VIF \> 10 → Alta colinealidad, la variable debería ser reconsiderada.
 
 ```{r}
 require(car)
@@ -1001,25 +1011,20 @@ En este caso, todos los valores de VIF obtenidos están muy por debajo de 5. Est
 
 ### Autocorrelación
 
-Test de Box-Ljung 
-El test de Box-Ljung es una prueba estadística utilizada para evaluar si los residuos de un modelo de series temporales son independientes (es decir, si no hay autocorrelación). (Box, 1970)
+Test de Box-Ljung El test de Box-Ljung es una prueba estadística utilizada para evaluar si los residuos de un modelo de series temporales son independientes (es decir, si no hay autocorrelación). (Box, 1970)
 
-Hipotesis nula (H0):No hay autocorrelación en los residuos
-Hipotesis alternativa (H1):Existe autocorrelacion en los residuos
+-   Hipotesis nula (H0):No hay autocorrelación en los residuos
 
+-   Hipotesis alternativa (H1):Existe autocorrelacion en los residuos
 
 ```{r}
 Box.test(best_model$residuals, lag = 20, type = "Ljung-Box")
 
 ```
 
-El estadístico del test fue X-squared = 39.61 con 20 grados de libertad, y se obtuvo un p-value = 0.0056.
-Dado que el p-value es inferior al nivel de significancia de 0.05, se rechaza la hipótesis nula de que no existe autocorrelación en los residuos.
-Por lo tanto, se concluye que existe evidencia significativa de autocorrelación en los residuos del modelo, lo cual sugiere que el supuesto de independencia no se cumple completamente y podría ser necesario considerar un modelo alternativo que tenga en cuenta esta dependencia temporal o estructural.
-### Resumen del modelo (MLR)
+El estadístico del test fue X-squared = 39.61 con 20 grados de libertad, y se obtuvo un p-value = 0.0056. Dado que el p-value es inferior al nivel de significancia de 0.05, se rechaza la hipótesis nula de que no existe autocorrelación en los residuos. Por lo tanto, se concluye que existe evidencia significativa de autocorrelación en los residuos del modelo, lo cual sugiere que el supuesto de independencia no se cumple completamente y podría ser necesario considerar un modelo alternativo que tenga en cuenta esta dependencia temporal o estructural. \### Resumen del modelo (MLR)
 
 El modelo con las variables elegidas tiene un R2 ajustado=0.5129, lo que quiere decir que es capaz de explicar el 51.29% de la variabilidad observada en el balance de masas y un p-value significativo, por lo que se puede aceptar que el modelo no es por azar.En cuanto a los residuos, cumple con el supuesto de homocedasticidad y distribucción normal, pero existe evidencia significativa de autocorrelación en los residuos del modelo, lo cual sugiere que el supuesto de independencia no se cumple completamente y podría ser necesario considerar un modelo alternativo que tenga en cuenta esta dependencia temporal o estructural.
-
 
 # Modelo de regresión lineal múltiple con componente autorregresiva (MLR-AR)
 
@@ -1044,9 +1049,11 @@ modelo_corrigido <- lm(mass_balance ~
                        data = datos_finales_limpio)
 summary(modelo_corrigido)
 ```
+
 Se puede observar que añadiendo la variable de autoregresión se obtiene un R2 ajustado=0.536, lo que quiere decir que es capaz de explicar el 53.6% de la variabilidad observada en el balance de masas y un p-value significativo, por lo que se puede aceptar que el modelo no es por azar.
 
 ### AIC
+
 ```{r}
 # Calidad del modelo ->AIC
 step(object = modelo_corrigido, direction = "both", trace = 1)
@@ -1063,7 +1070,6 @@ modelo_corrigido1 <- lm(mass_balance ~
 summary(modelo_corrigido1)
 ```
 
-
 ### Autocorrelación
 
 Tras incorporar un rezago de la variable dependiente (mass_balance) al modelo de regresión lineal múltiple, se aplicó nuevamente el test de Ljung-Box para evaluar la autocorrelación en los residuos.
@@ -1072,49 +1078,48 @@ Tras incorporar un rezago de la variable dependiente (mass_balance) al modelo de
 Box.test(residuals(modelo_corrigido), lag = 20, type = "Ljung-Box")
 ```
 
-El resultado obtenido fue X-squared = 22.872, con 20 grados de libertad y un p-value = 0.2951.
-Dado que el p-value es superior al umbral de significancia (0.05), no se rechaza la hipótesis nula de independencia. Por lo tanto, se concluye que no existe evidencia estadísticamente significativa de autocorrelación en los residuos del modelo corregido.
-Esto indica que la inclusión del componente autorregresivo ha sido efectiva para capturar la dependencia temporal detectada previamente, mejorando el cumplimiento de los supuestos clásicos del modelo de regresión.
+El resultado obtenido fue X-squared = 22.872, con 20 grados de libertad y un p-value = 0.2951. Dado que el p-value es superior al umbral de significancia (0.05), no se rechaza la hipótesis nula de independencia. Por lo tanto, se concluye que no existe evidencia estadísticamente significativa de autocorrelación en los residuos del modelo corregido. Esto indica que la inclusión del componente autorregresivo ha sido efectiva para capturar la dependencia temporal detectada previamente, mejorando el cumplimiento de los supuestos clásicos del modelo de regresión.
 
 ### Homocedasticidad
 
 ```{r}
 bptest(modelo_corrigido)
 ```
-El resultado fue BP = 3.5641, con 5 grados de libertad y un p-value = 0.6137.
-Dado que el p-value es muy superior al nivel de significancia convencional (0.05), no hay evidencia suficiente para rechazar la hipótesis nula de homocedasticidad. En consecuencia, No hay evidencia de falta de homocedasticidad
+
+El resultado fue BP = 3.5641, con 5 grados de libertad y un p-value = 0.6137. Dado que el p-value es muy superior al nivel de significancia convencional (0.05), no hay evidencia suficiente para rechazar la hipótesis nula de homocedasticidad. En consecuencia, No hay evidencia de falta de homocedasticidad
 
 ### Distribuccion normal de los residuos
 
-Test de Jarque Bera 
+Test de Jarque Bera
 
-Hipótesis del test:
-Hipotesis nula (H0):Los datos siguen una distribucción normal
-Hipotesis alternativa (H1):Los datos no siguen una distribucción normal
+-   Hipótesis del test: Hipotesis nula (H0):Los datos siguen una distribucción normal
 
+-   Hipotesis alternativa (H1):Los datos no siguen una distribucción normal
 
 ```{r}
 jarque.bera.test(modelo_corrigido$residuals)
 ```
 
-En este caso, el resultado del test muestra un estadístico X-squared = 4.5255 y un p-value = 0.1041 Dado que el p-value es mayor que 0.05, no hay evidencia suficiente para rechazar la hipótesis nula, lo que indica que los residuos siguen una distribución normal. 
+En este caso, el resultado del test muestra un estadístico X-squared = 4.5255 y un p-value = 0.1041 Dado que el p-value es mayor que 0.05, no hay evidencia suficiente para rechazar la hipótesis nula, lo que indica que los residuos siguen una distribución normal.
 
 ### Estacionareidad de los residuos
 
-Hipótesis nula (H₀): Los residuos tienen una raíz unitaria, es decir, no son estacionarios.
-Hipótesis alternativa (H₁): Los residuos son estacionarios.
+-   Hipótesis nula (H₀): Los residuos tienen una raíz unitaria, es decir, no son estacionarios.
+
+-   Hipótesis alternativa (H₁): Los residuos son estacionarios.
+
 ```{r}
 adf.test(modelo_corrigido$residuals)
 ```
+
 El resultado de la prueba de Dickey-Fuller aumentada (ADF) muestra un estadístico de Dickey-Fuller = -3.1038 y un p-value = 0.1224. Dado que el p-value es mayor que 0.05, no se rechaza la hipótesis nula, lo que sugiere que los residuos no son estacionarios.
 
 Esto indica que, a pesar de la incorporación de un componente autorregresivo en el modelo, los residuos aún presentan dependencia temporal no capturada correctamente, lo que sugiere la necesidad de ajustes adicionales en la estructura del modelo.
 
-
-
 ```{r}
 plot(modelo_corrigido)
 ```
+
 ## Correlación cruzada
 
 En la correlación cruzada, se analiza la relación entre dos variables en diferentes desfases de tiempo (lags), es decir, cómo una variable influye en otra con cierto retraso o anticipación.
@@ -1211,8 +1216,6 @@ pacf(diff(endo_ts),main="Autocorrelacion Parcial",  ylab="", ci.col="Red")
 auto.arima(endo_ts,trace = TRUE)
 ```
 
-
-
 ### ARIMA(0,1,1).
 
 ```{r}
@@ -1258,7 +1261,11 @@ La mayoría de los residuos permanecen dentro del rango de ±2σ (rojo), lo que 
 
 ##### Autocorrelación
 
-Para analizar la autocorrelación de los residuos, se aplica la prueba de Ljung-Box, la cual evalúa si los residuos del modelo presentan autocorrelación significativa o si pueden considerarse ruido blanco (es decir, si el modelo captura adecuadamente la estructura de los datos). Criterios: • p-value \< 0.05, los residuos no son ruido blanco, lo que indica que el modelo no captura toda la estructura de los datos y existe autocorrelación • p-value \> 0.05, los residuos son ruido blanco, lo que indica que el modelo captura bien la estructura de los datos y no hay autocorrelación significativa.
+Para analizar la autocorrelación de los residuos, se aplica la prueba de Ljung-Box, la cual evalúa si los residuos del modelo presentan autocorrelación significativa o si pueden considerarse ruido blanco (es decir, si el modelo captura adecuadamente la estructura de los datos). Criterios:
+
+-   p-value \< 0.05, los residuos no son ruido blanco, lo que indica que el modelo no captura toda la estructura de los datos y existe autocorrelación
+
+-   p-value \> 0.05, los residuos son ruido blanco, lo que indica que el modelo captura bien la estructura de los datos y no hay autocorrelación significativa.
 
 ```{r}
 checkresiduals(arima.011)
@@ -1287,15 +1294,16 @@ jarque.bera.test(arima.011$residuals)
 En este caso, el resultado del test muestra un estadístico X-squared = 1.1378 con 2 grados de libertad y un p-value = 0.5661. Dado que el p-value es mayor que 0.05, no se rechaza la hipótesis nula, lo que sugiere que los residuos siguen una distribución normal. Esto indica que el modelo cumple con el supuesto de normalidad en los residuos, lo cual es deseable para la validez de las inferencias estadísticas.
 
 ##### Estacionariedad de los residuos
+
 Para evaluar la estacionariedad de los residuos y asegurar que se comporten como ruido blanco, se aplica la prueba de Dickey-Fuller aumentada (ADF). Esta prueba tiene como hipótesis:
 
-•	Hipótesis nula (H₀): Los residuos no se comportan como ruido blanco (no son estacionarios).
-•	Hipótesis alternativa (H₁): Los residuos se comportan como ruido blanco (son estacionarios).
+• Hipótesis nula (H₀): Los residuos no se comportan como ruido blanco (no son estacionarios). • Hipótesis alternativa (H₁): Los residuos se comportan como ruido blanco (son estacionarios).
 
 ```{r}
 adf.test(arima.011$residuals)
 ```
-El resultado de la prueba muestra un estadístico de Dickey-Fuller = -3.6123 y un p-value = 0.03691 Dado que el p-value es menor que 0.05,hay evidencia sufiente para rechazar la hipótesis nula, lo que sugiere que los residuos  son estacionarios y, por lo tanto,  se comportan completamente como ruido blanco (sin patrones estructurados). 
+
+El resultado de la prueba muestra un estadístico de Dickey-Fuller = -3.6123 y un p-value = 0.03691 Dado que el p-value es menor que 0.05,hay evidencia sufiente para rechazar la hipótesis nula, lo que sugiere que los residuos son estacionarios y, por lo tanto, se comportan completamente como ruido blanco (sin patrones estructurados).
 
 #### ARIMA(111)
 
@@ -1344,7 +1352,11 @@ La mayoría de los residuos permanecen dentro del rango de ±2σ (rojo), lo que 
 
 ##### Autocorrelación
 
-Para analizar la autocorrelación de los residuos, se aplica la prueba de Ljung-Box, la cual evalúa si los residuos del modelo presentan autocorrelación significativa o si pueden considerarse ruido blanco (es decir, si el modelo captura adecuadamente la estructura de los datos). Criterios: • p-value \< 0.05, los residuos no son ruido blanco, lo que indica que el modelo no captura toda la estructura de los datos y existe autocorrelación • p-value \> 0.05, los residuos son ruido blanco, lo que indica que el modelo captura bien la estructura de los datos y no hay autocorrelación significativa.
+Para analizar la autocorrelación de los residuos, se aplica la prueba de Ljung-Box, la cual evalúa si los residuos del modelo presentan autocorrelación significativa o si pueden considerarse ruido blanco (es decir, si el modelo captura adecuadamente la estructura de los datos). Criterios:
+
+-   p-value \< 0.05, los residuos no son ruido blanco, lo que indica que el modelo no captura toda la estructura de los datos y existe autocorrelación
+
+-   p-value \> 0.05, los residuos son ruido blanco, lo que indica que el modelo captura bien la estructura de los datos y no hay autocorrelación significativa.
 
 ```{r}
 checkresiduals(arima.111)
@@ -1375,7 +1387,6 @@ En este caso, el resultado del test muestra un estadístico X-squared = 0.82867 
 Apartir de este momento se agregara variables exogenas
 
 ### Análsis de las variables Exógenas
-
 
 ```{r}
 # se aplica el test de estacionariedad a las variables exógenas
@@ -1409,8 +1420,10 @@ layout(matrix(c(1,2),1,2))
 acf(diff(exo_ts[,"RadiationPromedio_Anual"]), main="ACF Radiación (diferenciada)", ylab="", ci.col="Red")
 pacf(diff(exo_ts[,"RadiationPromedio_Anual"]), main="PACF Radiación (diferenciada)", ylab="", ci.col="Red")
 ```
-•	ACF: No se observan rezagos con valores significativamente altos; todos los valores se encuentran dentro de los intervalos de confianza.
-•	PACF: los dos primeros valores son significativos, y los siguientes se encuentran dentro de los límites de confianza, podría indicar un proceso AR (1) o AR (2).
+
+-   ACF: No se observan rezagos con valores significativamente altos; todos los valores se encuentran dentro de los intervalos de confianza.
+
+-   PACF: los dos primeros valores son significativos, y los siguientes se encuentran dentro de los límites de confianza, podría indicar un proceso AR (1) o AR (2).
 
 ```{r}
 #Identificar los valores P y Q
@@ -1418,8 +1431,10 @@ layout(matrix(c(1,2),1,2))
 acf(diff(exo_ts[,"PrecipitationPromedio_Verano"]), main="ACF Precipitación (diferenciada)", ylab="", ci.col="Red")
 pacf(diff(exo_ts[,"PrecipitationPromedio_Verano"]), main="PACF Precipitación (diferenciada)", ylab="", ci.col="Red")
 ```
-•	ACF, no hay rezagos con valores significativamente altos.
-•	PACF: Los primeros cuatro rezagos son significativos, lo que podría indicar un proceso AR (1) o AR (2).
+
+-   ACF, no hay rezagos con valores significativamente altos.
+
+-   PACF: Los primeros cuatro rezagos son significativos, lo que podría indicar un proceso AR (1) o AR (2).
 
 ```{r}
 #Identificar los valores P y Q
@@ -1427,8 +1442,10 @@ layout(matrix(c(1,2),1,2))
 acf(diff(exo_ts[,"TemperaturePromedio_Verano"]), main="ACF Temperatura (diferenciada)", ylab="", ci.col="Red")
 pacf(diff(exo_ts[,"TemperaturePromedio_Verano"]), main="PACF Temperatura (diferenciada)", ylab="", ci.col="Red")
 ```
-•	ACF, la presencia de algunos rezagos significativos sugiere que podría haber un componente MA en el modelo.
-•	PACF: los dos primeros valores son significativos, y los siguientes se encuentran dentro de los límites de confianza, podría indicar un proceso AR (1) o AR (2).
+
+-   ACF, la presencia de algunos rezagos significativos sugiere que podría haber un componente MA en el modelo.
+
+-   PACF: los dos primeros valores son significativos, y los siguientes se encuentran dentro de los límites de confianza, podría indicar un proceso AR (1) o AR (2).
 
 ```{r}
 #Identificar los valores P y Q
@@ -1436,8 +1453,10 @@ layout(matrix(c(1,2),1,2))
 acf(diff(exo_ts[,"DepthSnowPromedio_Verano"]), main="ACF Profundidad de la nieve (diferenciada)", ylab="", ci.col="Red")
 pacf(diff(exo_ts[,"DepthSnowPromedio_Verano"]), main="PACF Profundidad de la nieve (diferenciada)", ylab="", ci.col="Red")
 ```
-•	ACF: A partir del rezago 14, se observa un valor significativo, lo que sugiere la presencia de una dependencia temporal a largo plazo.
-•	PACF: los dos primeros valores son significativos, y los siguientes se encuentran dentro de los límites de confianza, podría indicar un proceso AR (1) o AR (2).
+
+-   ACF: A partir del rezago 14, se observa un valor significativo, lo que sugiere la presencia de una dependencia temporal a largo plazo.
+
+-   PACF: los dos primeros valores son significativos, y los siguientes se encuentran dentro de los límites de confianza, podría indicar un proceso AR (1) o AR (2).
 
 ## ARIMAX(0,1,1)
 
@@ -1490,30 +1509,31 @@ print(aic_values)
 
 se obtiene que el mejor modelo es sin incluir la radiacion.
 
-
 #### Evaluacion
 
 ##### Normalidad
 
-Para evaluar la normalidad de los residuos se aplica la prueba de Jarque Bera .
-Hipótesis nula (H₀): Los residuos siguen una distribución normal.
-Hipótesis alternativa (H₁): Los residuos no siguen una distribución normal.
+Para evaluar la normalidad de los residuos se aplica la prueba de Jarque Bera . Hipótesis nula (H₀): Los residuos siguen una distribución normal. Hipótesis alternativa (H₁): Los residuos no siguen una distribución normal.
 
 ```{r}
 residul<-resid(modelo_armax)
 jarque.bera.test(residul)
 ```
-En este caso, el resultado del test muestra un estadístico X-squared = 2.3218 con 2 grados de libertad y un p-value = 0.3132 Dado que el p-value es mayor que 0.05, no se rechaza la hipótesis nula, lo que sugiere que los residuos siguen una distribución normal. 
+
+En este caso, el resultado del test muestra un estadístico X-squared = 2.3218 con 2 grados de libertad y un p-value = 0.3132 Dado que el p-value es mayor que 0.05, no se rechaza la hipótesis nula, lo que sugiere que los residuos siguen una distribución normal.
 
 ##### Estacionariedad de los residuos
+
 Para evaluar la normalidad de los residuos y asegurar que se comporten como ruido blanco, se aplica la prueba de Dickey-Fuller aumentada (ADF). Esta prueba tiene como hipótesis:
 
-•	Hipótesis nula (H₀): Los residuos no se comportan como ruido blanco (no son estacionarios).
-•	Hipótesis alternativa (H₁): Los residuos se comportan como ruido blanco (son estacionarios).
+-   Hipótesis nula (H₀): Los residuos no se comportan como ruido blanco (no son estacionarios).
+
+-   Hipótesis alternativa (H₁): Los residuos se comportan como ruido blanco (son estacionarios).
 
 ```{r}
 adf.test(residul)
 ```
+
 El resultado de la prueba muestra un estadístico de Dickey-Fuller = -3.192 y un p-value = 0.0944. Dado que el p-value es mayor que 0.05, no se rechaza la hipótesis nula, lo que sugiere que los residuos no son estacionarios y, por lo tanto, no se comportan completamente como ruido blanco. Esto indica que el modelo podría no estar capturando toda la estructura de la serie.
 
 ##### Autocorrelación
@@ -1532,8 +1552,9 @@ En este caso, dado que el p-value = 0.9272, se concluye que los residuos no pres
 
 Para evaluar la homocedasticidad (es decir, si la varianza de los residuos es constante a lo largo del tiempo), se aplica la prueba de Box-Ljung a los residuos al cuadrado.
 
-Hipótesis nula (H₀): No hay autocorrelación en los residuos al cuadrado (los errores son homocedásticos).
-Hipótesis alternativa (H₁): Hay autocorrelación en los residuos al cuadrado (posible heterocedasticidad).
+-   Hipótesis nula (H₀): No hay autocorrelación en los residuos al cuadrado (los errores son homocedásticos).
+
+-   Hipótesis alternativa (H₁): Hay autocorrelación en los residuos al cuadrado (posible heterocedasticidad).
 
 ```{r}
 Box.test(modelo_armax$residuals^2, lag=2, type = "Ljung-Box")
@@ -1598,31 +1619,39 @@ obtengo que el mejor modelo es sin incluir la radiacion.
 ##### Normalidad
 
 Para evaluar la normalidad de los residuos se aplica la prueba de Jarque Bera .
-Hipótesis nula (H₀): Los residuos siguen una distribución normal.
-Hipótesis alternativa (H₁): Los residuos no siguen una distribución normal.
+
+-   Hipótesis nula (H₀): Los residuos siguen una distribución normal.
+
+-   Hipótesis alternativa (H₁): Los residuos no siguen una distribución normal.
 
 ```{r}
 residul2<-resid(arimax111)
 jarque.bera.test(residul2)
 ```
+
 En este caso, el resultado del test muestra un estadístico X-squared = 3.1131 con 2 grados de libertad y un p-value = 0.2109 Dado que el p-value es mayor que 0.05, no se rechaza la hipótesis nula, lo que sugiere que los residuos siguen una distribución normal. Esto indica que el modelo cumple con el supuesto de normalidad en los residuos, lo cual es deseable para la validez de las inferencias estadísticas.
 
 ##### Estacionariedad de los residuos
 
 Para evaluar la normalidad de los residuos y asegurar que se comporten como ruido blanco, se aplica la prueba de Dickey-Fuller aumentada (ADF). Esta prueba tiene como hipótesis:
 
-•	Hipótesis nula (H₀): Los residuos no se comportan como ruido blanco (no son estacionarios).
-•	Hipótesis alternativa (H₁): Los residuos se comportan como ruido blanco (son estacionarios).
+-   Hipótesis nula (H₀): Los residuos no se comportan como ruido blanco (no son estacionarios).
+
+-   Hipótesis alternativa (H₁): Los residuos se comportan como ruido blanco (son estacionarios).
 
 ```{r}
 adf.test(residul2)
 ```
-En este caso, el resultado de la prueba muestra un estadístico de Dickey-Fuller = -3.5589 y un p-value = 0.04159. Dado que el p-value es menor que 0.05, se rechaza la hipótesis nula, lo que indica que los residuos son estacionarios y, por lo tanto, se comportan como ruido blanco. Esto sugiere que el modelo captura adecuadamente la estructura de la serie, y los residuos no presentan patrones no modelados, lo cual es un resultado favorable para la validez del modelo.
 
+En este caso, el resultado de la prueba muestra un estadístico de Dickey-Fuller = -3.5589 y un p-value = 0.04159. Dado que el p-value es menor que 0.05, se rechaza la hipótesis nula, lo que indica que los residuos son estacionarios y, por lo tanto, se comportan como ruido blanco. Esto sugiere que el modelo captura adecuadamente la estructura de la serie, y los residuos no presentan patrones no modelados, lo cual es un resultado favorable para la validez del modelo.
 
 ##### Autocorrelación
 
-Para analizar la autocorrelación de los residuos, se aplica la prueba de Ljung-Box, la cual evalúa si los residuos del modelo presentan autocorrelación significativa o si pueden considerarse ruido blanco (es decir, si el modelo captura adecuadamente la estructura de los datos). Criterios: • p-value \< 0.05, los residuos no son ruido blanco, lo que indica que el modelo no captura toda la estructura de los datos y existe autocorrelación • p-value \> 0.05, los residuos son ruido blanco, lo que indica que el modelo captura bien la estructura de los datos y no hay autocorrelación significativa.
+Para analizar la autocorrelación de los residuos, se aplica la prueba de Ljung-Box, la cual evalúa si los residuos del modelo presentan autocorrelación significativa o si pueden considerarse ruido blanco (es decir, si el modelo captura adecuadamente la estructura de los datos). Criterios:
+
+-   p-value \< 0.05, los residuos no son ruido blanco, lo que indica que el modelo no captura toda la estructura de los datos y existe autocorrelación.
+
+-   p-value \> 0.05, los residuos son ruido blanco, lo que indica que el modelo captura bien la estructura de los datos y no hay autocorrelación significativa.
 
 ```{r}
 checkresiduals(arimax111)
@@ -1634,9 +1663,9 @@ En este caso, dado que el p-value = 0.9348, se concluye que los residuos no pres
 
 Para evaluar la homocedasticidad (es decir, si la varianza de los residuos es constante a lo largo del tiempo), se aplica la prueba de Box-Ljung a los residuos al cuadrado.
 
-Hipótesis nula (H₀): No hay autocorrelación en los residuos al cuadrado (los errores son homocedásticos).
-Hipótesis alternativa (H₁): Hay autocorrelación en los residuos al cuadrado (posible heterocedasticidad).
+-   Hipótesis nula (H₀): No hay autocorrelación en los residuos al cuadrado (los errores son homocedásticos).
 
+-   Hipótesis alternativa (H₁): Hay autocorrelación en los residuos al cuadrado (posible heterocedasticidad).
 
 ```{r}
 Box.test(arimax111$residuals^2, lag=2, type = "Ljung-Box")

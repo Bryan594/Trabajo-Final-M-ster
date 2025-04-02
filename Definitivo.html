@@ -284,64 +284,64 @@ Attaching package: 'dplyr'</code></pre>
 <section id="tratamiento-de-los-datos" class="level1">
 <h1>Tratamiento de los datos</h1>
 <section id="rellenar-valores-faltantes-de-profundidad-de-la-nieve" class="level2">
-<h2 class="anchored" data-anchor-id="rellenar-valores-faltantes-de-profundidad-de-la-nieve">rellenar valores faltantes de Profundidad de la nieve</h2>
+<h2 class="anchored" data-anchor-id="rellenar-valores-faltantes-de-profundidad-de-la-nieve">Rellenar valores faltantes de Profundidad de la nieve</h2>
 <p>Durante el proceso de descarga de datos, se identificó la presencia de valores faltantes en la tabla de profundidad de la nieve. Se observara que, en algunos meses, los registros diarios estaban incompletos y presentaban valores distribuidos de manera aleatoria, sin una secuencia clara.</p>
 <p>Para determinar si los datos faltantes deben ser interpolados o descartados, se realizó un análisis comparativo del comportamiento de la profundidad de la nieve (en metros) en los meses con datos ausentes. Esta comparación se llevó a cabo diferenciando dos períodos: antes de 1959 y después de 1959 . Si el patrón observado en ambos períodos es consistente, los valores faltantes podrían ser estimados mediante interpolación. En cambio, si se identifican diferencias significativas en los patrones, se considerará la opción de omitir estos datos en el análisis.</p>
 <div class="cell">
-<div class="sourceCode cell-code" id="cb36"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb36-1"><a href="#cb36-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Crear un subconjunto con los datos antes de 1959</span></span>
-<span id="cb36-2"><a href="#cb36-2" aria-hidden="true" tabindex="-1"></a>datosAntes1959 <span class="ot">&lt;-</span> <span class="fu">subset</span>(data_nieve, Fecha <span class="sc">&lt;</span> <span class="fu">as.Date</span>(<span class="st">"1959-01-01"</span>))</span>
-<span id="cb36-3"><a href="#cb36-3" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb36-4"><a href="#cb36-4" aria-hidden="true" tabindex="-1"></a><span class="co"># Crear un subconjunto con los datos después de 1959</span></span>
-<span id="cb36-5"><a href="#cb36-5" aria-hidden="true" tabindex="-1"></a>datosDespues1959 <span class="ot">&lt;-</span> <span class="fu">subset</span>(data_nieve, Fecha <span class="sc">&gt;=</span> <span class="fu">as.Date</span>(<span class="st">"1959-01-01"</span>))</span>
-<span id="cb36-6"><a href="#cb36-6" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb36-7"><a href="#cb36-7" aria-hidden="true" tabindex="-1"></a><span class="co"># Agregar columnas de Año y Mes</span></span>
-<span id="cb36-8"><a href="#cb36-8" aria-hidden="true" tabindex="-1"></a>datosAntes1959 <span class="ot">&lt;-</span> datosAntes1959 <span class="sc">%&gt;%</span> </span>
-<span id="cb36-9"><a href="#cb36-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(Año <span class="ot">=</span> <span class="fu">format</span>(Fecha, <span class="st">"%Y"</span>), <span class="at">Mes =</span> <span class="fu">format</span>(Fecha, <span class="st">"%m"</span>))</span>
-<span id="cb36-10"><a href="#cb36-10" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb36-11"><a href="#cb36-11" aria-hidden="true" tabindex="-1"></a>datosDespues1959 <span class="ot">&lt;-</span> datosDespues1959 <span class="sc">%&gt;%</span> </span>
-<span id="cb36-12"><a href="#cb36-12" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(Año <span class="ot">=</span> <span class="fu">format</span>(Fecha, <span class="st">"%Y"</span>), <span class="at">Mes =</span> <span class="fu">format</span>(Fecha, <span class="st">"%m"</span>))</span>
-<span id="cb36-13"><a href="#cb36-13" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb36-14"><a href="#cb36-14" aria-hidden="true" tabindex="-1"></a><span class="co"># Calcular el número de días presentes por mes antes de 1959</span></span>
-<span id="cb36-15"><a href="#cb36-15" aria-hidden="true" tabindex="-1"></a>diasPorMesAntes1959 <span class="ot">&lt;-</span> datosAntes1959 <span class="sc">%&gt;%</span></span>
-<span id="cb36-16"><a href="#cb36-16" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(Año, Mes) <span class="sc">%&gt;%</span></span>
-<span id="cb36-17"><a href="#cb36-17" aria-hidden="true" tabindex="-1"></a>  <span class="fu">summarise</span>(<span class="at">DiasPresentes =</span> <span class="fu">n</span>(), <span class="at">.groups =</span> <span class="st">"drop"</span>)</span>
-<span id="cb36-18"><a href="#cb36-18" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb36-19"><a href="#cb36-19" aria-hidden="true" tabindex="-1"></a><span class="co"># Calcular el promedio de nieve por mes antes de 1959</span></span>
-<span id="cb36-20"><a href="#cb36-20" aria-hidden="true" tabindex="-1"></a>promedioPorMesAntes1959 <span class="ot">&lt;-</span> datosAntes1959 <span class="sc">%&gt;%</span></span>
-<span id="cb36-21"><a href="#cb36-21" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(Mes) <span class="sc">%&gt;%</span></span>
-<span id="cb36-22"><a href="#cb36-22" aria-hidden="true" tabindex="-1"></a>  <span class="fu">summarise</span>(<span class="at">NievePromedio =</span> <span class="fu">mean</span>(V4, <span class="at">na.rm =</span> <span class="cn">TRUE</span>), <span class="at">.groups =</span> <span class="st">"drop"</span>)</span>
-<span id="cb36-23"><a href="#cb36-23" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb36-24"><a href="#cb36-24" aria-hidden="true" tabindex="-1"></a><span class="co"># Calcular el promedio de nieve por mes después de 1959</span></span>
-<span id="cb36-25"><a href="#cb36-25" aria-hidden="true" tabindex="-1"></a>promedioPorMesDespues1959 <span class="ot">&lt;-</span> datosDespues1959 <span class="sc">%&gt;%</span></span>
-<span id="cb36-26"><a href="#cb36-26" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(Mes) <span class="sc">%&gt;%</span></span>
-<span id="cb36-27"><a href="#cb36-27" aria-hidden="true" tabindex="-1"></a>  <span class="fu">summarise</span>(<span class="at">NievePromedio =</span> <span class="fu">mean</span>(V4, <span class="at">na.rm =</span> <span class="cn">TRUE</span>), <span class="at">.groups =</span> <span class="st">"drop"</span>)</span>
-<span id="cb36-28"><a href="#cb36-28" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb36-29"><a href="#cb36-29" aria-hidden="true" tabindex="-1"></a><span class="co"># Crear un dataframe auxiliar para la leyenda</span></span>
-<span id="cb36-30"><a href="#cb36-30" aria-hidden="true" tabindex="-1"></a>leyenda <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(</span>
-<span id="cb36-31"><a href="#cb36-31" aria-hidden="true" tabindex="-1"></a>  <span class="at">Periodo =</span> <span class="fu">c</span>(<span class="st">"Antes de 1959"</span>, <span class="st">"Después de 1959"</span>),</span>
-<span id="cb36-32"><a href="#cb36-32" aria-hidden="true" tabindex="-1"></a>  <span class="at">Color =</span> <span class="fu">c</span>(<span class="st">"red"</span>, <span class="st">"blue"</span>)</span>
-<span id="cb36-33"><a href="#cb36-33" aria-hidden="true" tabindex="-1"></a>)</span>
-<span id="cb36-34"><a href="#cb36-34" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb36-35"><a href="#cb36-35" aria-hidden="true" tabindex="-1"></a><span class="co"># Visualizar la comparación de promedios con leyenda</span></span>
-<span id="cb36-36"><a href="#cb36-36" aria-hidden="true" tabindex="-1"></a><span class="fu">ggplot</span>() <span class="sc">+</span></span>
-<span id="cb36-37"><a href="#cb36-37" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_line</span>(<span class="at">data =</span> promedioPorMesAntes1959, <span class="fu">aes</span>(<span class="at">x =</span> <span class="fu">as.numeric</span>(Mes), <span class="at">y =</span> NievePromedio, <span class="at">color =</span> <span class="st">"Antes de 1959"</span>), <span class="at">size =</span> <span class="dv">1</span>) <span class="sc">+</span></span>
-<span id="cb36-38"><a href="#cb36-38" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_line</span>(<span class="at">data =</span> promedioPorMesDespues1959, <span class="fu">aes</span>(<span class="at">x =</span> <span class="fu">as.numeric</span>(Mes), <span class="at">y =</span> NievePromedio, <span class="at">color =</span> <span class="st">"Después de 1959"</span>), <span class="at">size =</span> <span class="dv">1</span>) <span class="sc">+</span></span>
-<span id="cb36-39"><a href="#cb36-39" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_color_manual</span>(</span>
-<span id="cb36-40"><a href="#cb36-40" aria-hidden="true" tabindex="-1"></a>    <span class="at">values =</span> <span class="fu">setNames</span>(leyenda<span class="sc">$</span>Color, leyenda<span class="sc">$</span>Periodo)</span>
-<span id="cb36-41"><a href="#cb36-41" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">+</span></span>
-<span id="cb36-42"><a href="#cb36-42" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(</span>
-<span id="cb36-43"><a href="#cb36-43" aria-hidden="true" tabindex="-1"></a>    <span class="at">title =</span> <span class="st">"Comparación del nivel promedio de nieve por mes"</span>,</span>
-<span id="cb36-44"><a href="#cb36-44" aria-hidden="true" tabindex="-1"></a>    <span class="at">x =</span> <span class="st">"Mes"</span>,</span>
-<span id="cb36-45"><a href="#cb36-45" aria-hidden="true" tabindex="-1"></a>    <span class="at">y =</span> <span class="st">"Nieve Promedio (m)"</span>,</span>
-<span id="cb36-46"><a href="#cb36-46" aria-hidden="true" tabindex="-1"></a>    <span class="at">color =</span> <span class="st">"Periodo"</span></span>
-<span id="cb36-47"><a href="#cb36-47" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">+</span></span>
-<span id="cb36-48"><a href="#cb36-48" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_x_continuous</span>(<span class="at">breaks =</span> <span class="dv">1</span><span class="sc">:</span><span class="dv">12</span>, <span class="at">labels =</span> month.abb) <span class="sc">+</span></span>
-<span id="cb36-49"><a href="#cb36-49" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_minimal</span>() <span class="sc">+</span></span>
-<span id="cb36-50"><a href="#cb36-50" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme</span>(</span>
-<span id="cb36-51"><a href="#cb36-51" aria-hidden="true" tabindex="-1"></a>    <span class="at">legend.position =</span> <span class="st">"top"</span>,  <span class="co"># Coloca la leyenda en la parte superior</span></span>
-<span id="cb36-52"><a href="#cb36-52" aria-hidden="true" tabindex="-1"></a>    <span class="at">legend.title =</span> <span class="fu">element_text</span>(<span class="at">size =</span> <span class="dv">10</span>),  <span class="co"># Tamaño del título de la leyenda</span></span>
-<span id="cb36-53"><a href="#cb36-53" aria-hidden="true" tabindex="-1"></a>    <span class="at">legend.text =</span> <span class="fu">element_text</span>(<span class="at">size =</span> <span class="dv">9</span>)     <span class="co"># Tamaño del texto de la leyenda</span></span>
-<span id="cb36-54"><a href="#cb36-54" aria-hidden="true" tabindex="-1"></a>  )</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb37"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb37-1"><a href="#cb37-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Crear un subconjunto con los datos antes de 1959</span></span>
+<span id="cb37-2"><a href="#cb37-2" aria-hidden="true" tabindex="-1"></a>datosAntes1959 <span class="ot">&lt;-</span> <span class="fu">subset</span>(data_nieve, Fecha <span class="sc">&lt;</span> <span class="fu">as.Date</span>(<span class="st">"1959-01-01"</span>))</span>
+<span id="cb37-3"><a href="#cb37-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb37-4"><a href="#cb37-4" aria-hidden="true" tabindex="-1"></a><span class="co"># Crear un subconjunto con los datos después de 1959</span></span>
+<span id="cb37-5"><a href="#cb37-5" aria-hidden="true" tabindex="-1"></a>datosDespues1959 <span class="ot">&lt;-</span> <span class="fu">subset</span>(data_nieve, Fecha <span class="sc">&gt;=</span> <span class="fu">as.Date</span>(<span class="st">"1959-01-01"</span>))</span>
+<span id="cb37-6"><a href="#cb37-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb37-7"><a href="#cb37-7" aria-hidden="true" tabindex="-1"></a><span class="co"># Agregar columnas de Año y Mes</span></span>
+<span id="cb37-8"><a href="#cb37-8" aria-hidden="true" tabindex="-1"></a>datosAntes1959 <span class="ot">&lt;-</span> datosAntes1959 <span class="sc">%&gt;%</span> </span>
+<span id="cb37-9"><a href="#cb37-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(Año <span class="ot">=</span> <span class="fu">format</span>(Fecha, <span class="st">"%Y"</span>), <span class="at">Mes =</span> <span class="fu">format</span>(Fecha, <span class="st">"%m"</span>))</span>
+<span id="cb37-10"><a href="#cb37-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb37-11"><a href="#cb37-11" aria-hidden="true" tabindex="-1"></a>datosDespues1959 <span class="ot">&lt;-</span> datosDespues1959 <span class="sc">%&gt;%</span> </span>
+<span id="cb37-12"><a href="#cb37-12" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(Año <span class="ot">=</span> <span class="fu">format</span>(Fecha, <span class="st">"%Y"</span>), <span class="at">Mes =</span> <span class="fu">format</span>(Fecha, <span class="st">"%m"</span>))</span>
+<span id="cb37-13"><a href="#cb37-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb37-14"><a href="#cb37-14" aria-hidden="true" tabindex="-1"></a><span class="co"># Calcular el número de días presentes por mes antes de 1959</span></span>
+<span id="cb37-15"><a href="#cb37-15" aria-hidden="true" tabindex="-1"></a>diasPorMesAntes1959 <span class="ot">&lt;-</span> datosAntes1959 <span class="sc">%&gt;%</span></span>
+<span id="cb37-16"><a href="#cb37-16" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(Año, Mes) <span class="sc">%&gt;%</span></span>
+<span id="cb37-17"><a href="#cb37-17" aria-hidden="true" tabindex="-1"></a>  <span class="fu">summarise</span>(<span class="at">DiasPresentes =</span> <span class="fu">n</span>(), <span class="at">.groups =</span> <span class="st">"drop"</span>)</span>
+<span id="cb37-18"><a href="#cb37-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb37-19"><a href="#cb37-19" aria-hidden="true" tabindex="-1"></a><span class="co"># Calcular el promedio de nieve por mes antes de 1959</span></span>
+<span id="cb37-20"><a href="#cb37-20" aria-hidden="true" tabindex="-1"></a>promedioPorMesAntes1959 <span class="ot">&lt;-</span> datosAntes1959 <span class="sc">%&gt;%</span></span>
+<span id="cb37-21"><a href="#cb37-21" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(Mes) <span class="sc">%&gt;%</span></span>
+<span id="cb37-22"><a href="#cb37-22" aria-hidden="true" tabindex="-1"></a>  <span class="fu">summarise</span>(<span class="at">NievePromedio =</span> <span class="fu">mean</span>(V4, <span class="at">na.rm =</span> <span class="cn">TRUE</span>), <span class="at">.groups =</span> <span class="st">"drop"</span>)</span>
+<span id="cb37-23"><a href="#cb37-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb37-24"><a href="#cb37-24" aria-hidden="true" tabindex="-1"></a><span class="co"># Calcular el promedio de nieve por mes después de 1959</span></span>
+<span id="cb37-25"><a href="#cb37-25" aria-hidden="true" tabindex="-1"></a>promedioPorMesDespues1959 <span class="ot">&lt;-</span> datosDespues1959 <span class="sc">%&gt;%</span></span>
+<span id="cb37-26"><a href="#cb37-26" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(Mes) <span class="sc">%&gt;%</span></span>
+<span id="cb37-27"><a href="#cb37-27" aria-hidden="true" tabindex="-1"></a>  <span class="fu">summarise</span>(<span class="at">NievePromedio =</span> <span class="fu">mean</span>(V4, <span class="at">na.rm =</span> <span class="cn">TRUE</span>), <span class="at">.groups =</span> <span class="st">"drop"</span>)</span>
+<span id="cb37-28"><a href="#cb37-28" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb37-29"><a href="#cb37-29" aria-hidden="true" tabindex="-1"></a><span class="co"># Crear un dataframe auxiliar para la leyenda</span></span>
+<span id="cb37-30"><a href="#cb37-30" aria-hidden="true" tabindex="-1"></a>leyenda <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(</span>
+<span id="cb37-31"><a href="#cb37-31" aria-hidden="true" tabindex="-1"></a>  <span class="at">Periodo =</span> <span class="fu">c</span>(<span class="st">"Antes de 1959"</span>, <span class="st">"Después de 1959"</span>),</span>
+<span id="cb37-32"><a href="#cb37-32" aria-hidden="true" tabindex="-1"></a>  <span class="at">Color =</span> <span class="fu">c</span>(<span class="st">"red"</span>, <span class="st">"blue"</span>)</span>
+<span id="cb37-33"><a href="#cb37-33" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb37-34"><a href="#cb37-34" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb37-35"><a href="#cb37-35" aria-hidden="true" tabindex="-1"></a><span class="co"># Visualizar la comparación de promedios con leyenda</span></span>
+<span id="cb37-36"><a href="#cb37-36" aria-hidden="true" tabindex="-1"></a><span class="fu">ggplot</span>() <span class="sc">+</span></span>
+<span id="cb37-37"><a href="#cb37-37" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_line</span>(<span class="at">data =</span> promedioPorMesAntes1959, <span class="fu">aes</span>(<span class="at">x =</span> <span class="fu">as.numeric</span>(Mes), <span class="at">y =</span> NievePromedio, <span class="at">color =</span> <span class="st">"Antes de 1959"</span>), <span class="at">size =</span> <span class="dv">1</span>) <span class="sc">+</span></span>
+<span id="cb37-38"><a href="#cb37-38" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_line</span>(<span class="at">data =</span> promedioPorMesDespues1959, <span class="fu">aes</span>(<span class="at">x =</span> <span class="fu">as.numeric</span>(Mes), <span class="at">y =</span> NievePromedio, <span class="at">color =</span> <span class="st">"Después de 1959"</span>), <span class="at">size =</span> <span class="dv">1</span>) <span class="sc">+</span></span>
+<span id="cb37-39"><a href="#cb37-39" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_color_manual</span>(</span>
+<span id="cb37-40"><a href="#cb37-40" aria-hidden="true" tabindex="-1"></a>    <span class="at">values =</span> <span class="fu">setNames</span>(leyenda<span class="sc">$</span>Color, leyenda<span class="sc">$</span>Periodo)</span>
+<span id="cb37-41"><a href="#cb37-41" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">+</span></span>
+<span id="cb37-42"><a href="#cb37-42" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(</span>
+<span id="cb37-43"><a href="#cb37-43" aria-hidden="true" tabindex="-1"></a>    <span class="at">title =</span> <span class="st">"Comparación del nivel promedio de nieve por mes"</span>,</span>
+<span id="cb37-44"><a href="#cb37-44" aria-hidden="true" tabindex="-1"></a>    <span class="at">x =</span> <span class="st">"Mes"</span>,</span>
+<span id="cb37-45"><a href="#cb37-45" aria-hidden="true" tabindex="-1"></a>    <span class="at">y =</span> <span class="st">"Nieve Promedio (m)"</span>,</span>
+<span id="cb37-46"><a href="#cb37-46" aria-hidden="true" tabindex="-1"></a>    <span class="at">color =</span> <span class="st">"Periodo"</span></span>
+<span id="cb37-47"><a href="#cb37-47" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">+</span></span>
+<span id="cb37-48"><a href="#cb37-48" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_x_continuous</span>(<span class="at">breaks =</span> <span class="dv">1</span><span class="sc">:</span><span class="dv">12</span>, <span class="at">labels =</span> month.abb) <span class="sc">+</span></span>
+<span id="cb37-49"><a href="#cb37-49" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_minimal</span>() <span class="sc">+</span></span>
+<span id="cb37-50"><a href="#cb37-50" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme</span>(</span>
+<span id="cb37-51"><a href="#cb37-51" aria-hidden="true" tabindex="-1"></a>    <span class="at">legend.position =</span> <span class="st">"top"</span>,  <span class="co"># Coloca la leyenda en la parte superior</span></span>
+<span id="cb37-52"><a href="#cb37-52" aria-hidden="true" tabindex="-1"></a>    <span class="at">legend.title =</span> <span class="fu">element_text</span>(<span class="at">size =</span> <span class="dv">10</span>),  <span class="co"># Tamaño del título de la leyenda</span></span>
+<span id="cb37-53"><a href="#cb37-53" aria-hidden="true" tabindex="-1"></a>    <span class="at">legend.text =</span> <span class="fu">element_text</span>(<span class="at">size =</span> <span class="dv">9</span>)     <span class="co"># Tamaño del texto de la leyenda</span></span>
+<span id="cb37-54"><a href="#cb37-54" aria-hidden="true" tabindex="-1"></a>  )</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 <div class="cell-output-display">
 <div>
 <figure class="figure">
